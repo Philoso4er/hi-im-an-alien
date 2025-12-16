@@ -12,7 +12,13 @@ export enum GameMode {
   CHILL = 'CHILL'
 }
 
-export type AlienStatus = 'IDLE' | 'HIT' | 'MISSED' | 'LISTENING' | 'THINKING' | 'TALKING';
+export type AlienStatus =
+  | 'IDLE'
+  | 'HIT'
+  | 'MISSED'
+  | 'LISTENING'
+  | 'THINKING'
+  | 'TALKING';
 
 export interface GameStats {
   score: number;
@@ -33,4 +39,10 @@ export interface AlienPosition {
   left: string;
 }
 
-export type SoundType = 'portal' | 'spawn' | 'success' | 'miss' | 'click' | 'gameover' | 'talk';
+export type SoundType =
+  | 'portal'
+  | 'spawn'
+  | 'success'
+  | 'miss'
+  | 'click'
+  | 'gameover';
