@@ -1,4 +1,3 @@
-// App.tsx
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -11,7 +10,7 @@ import {
   X,
   Send
 } from 'lucide-react';
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI } from '@google/genai';
 import {
   GameScreen,
   GameStats,
@@ -34,6 +33,7 @@ const ALIEN_VISIBLE_DURATION = 4000;
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export default function App() {
+  // ---------------- STATE ----------------
   const [screen, setScreen] = useState<GameScreen>(GameScreen.SPLASH);
   const [timeLeft, setTimeLeft] = useState(GAME_DURATION);
   const [score, setScore] = useState(0);
@@ -53,6 +53,7 @@ export default function App() {
     vibrationEnabled: true
   });
 
+  // Alien
   const [alienVisible, setAlienVisible] = useState(false);
   const [alienStatus, setAlienStatus] = useState<AlienStatus>('IDLE');
   const [alienPosition, setAlienPosition] = useState<AlienPosition>({
@@ -61,10 +62,15 @@ export default function App() {
   });
   const [alienMessage, setAlienMessage] = useState<string | null>(null);
 
+  // AR Illusion (device motion)
+  const [motionOffset, setMotionOffset] = useState({ x: 0, y: 0 });
+
+  // Chat / UI
   const [chatInput, setChatInput] = useState('');
   const [isGamePaused, setIsGamePaused] = useState(false);
   const [feedback, setFeedback] = useState<{ text: string; color: string } | null>(null);
 
+  // Refs
   const gameLoopRef = useRef<number | null>(null);
   const alienTimeoutRef = useRef<number | null>(null);
   const spawnTimeoutRef = useRef<number | null>(null);
@@ -73,15 +79,41 @@ export default function App() {
   const reactionTimesRef = useRef<number[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // ---------------- EFFECTS ----------------
+
+  // Splash → Menu
   useEffect(() => {
     if (screen === GameScreen.SPLASH) {
       setTimeout(() => setScreen(GameScreen.MENU), 2000);
     }
   }, [screen]);
 
+  // Audio settings
   useEffect(() => {
     audioService.setSettings(settings.soundEnabled, settings.musicEnabled);
   }, [settings]);
+
+  // 📱 Device-motion AR illusion
+  useEffect(() => {
+    const handleOrientation = (e: DeviceOrientationEvent) => {
+      if (e.beta == null || e.gamma == null) return;
+
+      const maxOffset = 20; // px
+      const x = Math.max(-maxOffset, Math.min(maxOffset, e.gamma));
+      const y = Math.max(-maxOffset, Math.min(maxOffset, e.beta));
+
+      setMotionOffset({
+        x: x * 0.6,
+        y: y * 0.6
+      });
+    };
+
+    window.addEventListener('deviceorientation', handleOrientation, true);
+    return () =>
+      window.removeEventListener('deviceorientation', handleOrientation);
+  }, []);
+
+  // ---------------- GAME LOGIC ----------------
 
   const spawnAlien = useCallback(() => {
     if (screen !== GameScreen.PLAYING) return;
@@ -119,7 +151,7 @@ export default function App() {
       audioService.play('miss');
       setStreak(0);
       setStats(s => ({ ...s, misses: s.misses + 1 }));
-      setFeedback({ text: "Too Slow!", color: "text-red-500" });
+      setFeedback({ text: 'Too Slow!', color: 'text-red-500' });
       setTimeout(() => setFeedback(null), 1000);
 
       setTimeout(() => {
@@ -176,6 +208,7 @@ export default function App() {
     setStats(prev => ({ ...prev, averageReactionTimeMs: avg }));
   }, []);
 
+  // Timer
   useEffect(() => {
     if (screen === GameScreen.PLAYING && !isGamePaused) {
       gameLoopRef.current = window.setInterval(() => {
@@ -193,14 +226,11 @@ export default function App() {
     };
   }, [screen, isGamePaused, endGame]);
 
-  /* UI RENDERING */
+  // ---------------- UI ----------------
 
   const renderSplash = () => (
     <div className="absolute inset-0 bg-black flex items-center justify-center z-50">
-      <motion.div
-        initial={{ scale: 0.5, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-      >
+      <motion.div initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}>
         <h1 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-500">
           HI I’M AN ALIEN 👽
         </h1>
@@ -218,24 +248,16 @@ export default function App() {
       </h1>
 
       <div className="flex flex-col w-full max-w-xs gap-4">
-        <button
-          onClick={startGame}
-          className="bg-gradient-to-r from-cyan-600 to-blue-600 py-4 rounded-xl font-bold text-xl"
-        >
+        <button onClick={startGame} className="bg-cyan-600 py-4 rounded-xl font-bold text-xl">
           <Play /> PLAY
         </button>
 
-        <button
-          onClick={() => setScreen(GameScreen.HOW_TO)}
-          className="bg-gray-800 py-3 rounded-xl font-bold"
-        >
+        <button onClick={() => setScreen(GameScreen.HOW_TO)} className="bg-gray-800 py-3 rounded-xl font-bold">
           <HelpCircle /> HOW TO PLAY
         </button>
 
         <button
-          onClick={() =>
-            setSettings(s => ({ ...s, soundEnabled: !s.soundEnabled }))
-          }
+          onClick={() => setSettings(s => ({ ...s, soundEnabled: !s.soundEnabled }))}
           className="bg-gray-800 py-3 rounded-xl font-bold"
         >
           {settings.soundEnabled ? <Volume2 /> : <VolumeX />} SOUND
@@ -247,22 +269,26 @@ export default function App() {
   return (
     <div className="relative w-full h-dvh bg-black overflow-hidden">
       <CameraFeed />
+
       {screen === GameScreen.SPLASH && renderSplash()}
       {screen === GameScreen.MENU && renderMenu()}
+
       {screen === GameScreen.PLAYING && (
         <>
           <GameHUD stats={stats} timeLeft={timeLeft} streak={streak} />
+
           <Alien
             isVisible={alienVisible}
             status={alienStatus}
             position={alienPosition}
+            offsetX={motionOffset.x}
+            offsetY={motionOffset.y}
             message={alienMessage}
           />
+
           <WaveButton onWave={() => {}} />
-          <button
-            onClick={endGame}
-            className="absolute top-4 right-4 z-50 p-2"
-          >
+
+          <button onClick={endGame} className="absolute top-4 right-4 z-50 p-2">
             <X />
           </button>
         </>
