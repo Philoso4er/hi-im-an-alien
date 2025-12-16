@@ -2,31 +2,28 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Alien Ping AR</title>
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <title>Hi I’m an Alien 👽</title>
+
+    <!-- Tailwind (Vite-compatible CDN is OK) -->
     <script src="https://cdn.tailwindcss.com"></script>
+
     <style>
-      /* Prevent pull-to-refresh on mobile */
       body {
         overscroll-behavior-y: contain;
         touch-action: manipulation;
         -webkit-tap-highlight-color: transparent;
       }
     </style>
-  <script type="importmap">
-{
-  "imports": {
-    "react": "https://aistudiocdn.com/react@^19.2.1",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
-    "react/": "https://aistudiocdn.com/react@^19.2.1/",
-    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.555.0",
-    "framer-motion": "https://aistudiocdn.com/framer-motion@^12.23.25",
-    "@google/genai": "https://esm.sh/@google/genai@^1.33.0"
-  }
-}
-</script>
-</head>
+  </head>
+
   <body class="bg-black text-white overflow-hidden w-full h-full">
     <div id="root" class="w-full h-full"></div>
+
+    <!-- Vite entry point -->
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
