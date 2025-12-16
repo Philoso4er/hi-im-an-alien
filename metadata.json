@@ -1,0 +1,7 @@
+{
+  "name": "Alien Ping AR",
+  "description": "A futuristic AR game where you spot and wave back at aliens appearing in your environment.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
