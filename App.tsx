@@ -1,16 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import {
   Play,
   HelpCircle,
   Volume2,
   VolumeX,
-  RotateCcw,
-  Home,
-  X,
-  Send
+  X
 } from 'lucide-react';
-import { GoogleGenAI } from '@google/genai';
+
 import {
   GameScreen,
   GameStats,
@@ -18,6 +15,7 @@ import {
   AlienPosition,
   AlienStatus
 } from './types';
+
 import CameraFeed from './components/CameraFeed';
 import Alien from './components/Alien';
 import GameHUD from './components/GameHUD';
@@ -29,14 +27,10 @@ const ALIEN_MIN_INTERVAL = 2000;
 const ALIEN_MAX_INTERVAL = 5000;
 const ALIEN_VISIBLE_DURATION = 4000;
 
-// Initialize AI
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
 export default function App() {
   // ---------------- STATE ----------------
   const [screen, setScreen] = useState<GameScreen>(GameScreen.SPLASH);
   const [timeLeft, setTimeLeft] = useState(GAME_DURATION);
-  const [score, setScore] = useState(0);
   const [streak, setStreak] = useState(0);
 
   const [stats, setStats] = useState<GameStats>({
@@ -60,24 +54,16 @@ export default function App() {
     top: '50%',
     left: '50%'
   });
-  const [alienMessage, setAlienMessage] = useState<string | null>(null);
 
   // AR Illusion (device motion)
   const [motionOffset, setMotionOffset] = useState({ x: 0, y: 0 });
 
-  // Chat / UI
-  const [chatInput, setChatInput] = useState('');
   const [isGamePaused, setIsGamePaused] = useState(false);
-  const [feedback, setFeedback] = useState<{ text: string; color: string } | null>(null);
 
   // Refs
   const gameLoopRef = useRef<number | null>(null);
   const alienTimeoutRef = useRef<number | null>(null);
   const spawnTimeoutRef = useRef<number | null>(null);
-  const patienceTimeoutRef = useRef<number | null>(null);
-  const reactionStartRef = useRef<number>(0);
-  const reactionTimesRef = useRef<number[]>([]);
-  const inputRef = useRef<HTMLInputElement>(null);
 
   // ---------------- EFFECTS ----------------
 
@@ -98,7 +84,7 @@ export default function App() {
     const handleOrientation = (e: DeviceOrientationEvent) => {
       if (e.beta == null || e.gamma == null) return;
 
-      const maxOffset = 20; // px
+      const maxOffset = 20;
       const x = Math.max(-maxOffset, Math.min(maxOffset, e.gamma));
       const y = Math.max(-maxOffset, Math.min(maxOffset, e.beta));
 
@@ -123,15 +109,10 @@ export default function App() {
 
     setAlienPosition({ top, left });
     setAlienStatus('IDLE');
-    setAlienMessage(null);
     setAlienVisible(true);
-    setChatInput('');
-    setIsGamePaused(false);
 
     audioService.play('portal');
     setTimeout(() => audioService.play('spawn'), 300);
-
-    reactionStartRef.current = Date.now();
 
     if (alienTimeoutRef.current) clearTimeout(alienTimeoutRef.current);
     alienTimeoutRef.current = window.setTimeout(handleMiss, ALIEN_VISIBLE_DURATION);
@@ -151,8 +132,6 @@ export default function App() {
       audioService.play('miss');
       setStreak(0);
       setStats(s => ({ ...s, misses: s.misses + 1 }));
-      setFeedback({ text: 'Too Slow!', color: 'text-red-500' });
-      setTimeout(() => setFeedback(null), 1000);
 
       setTimeout(() => {
         setAlienVisible(false);
@@ -166,7 +145,6 @@ export default function App() {
   const startGame = () => {
     setScreen(GameScreen.PLAYING);
     setTimeLeft(GAME_DURATION);
-    setScore(0);
     setStreak(0);
     setStats({
       score: 0,
@@ -175,38 +153,28 @@ export default function App() {
       longestStreak: 0,
       averageReactionTimeMs: 0
     });
-    reactionTimesRef.current = [];
-    setFeedback(null);
+
     setAlienVisible(false);
-    setIsGamePaused(false);
     setAlienStatus('IDLE');
-    setAlienMessage(null);
+    setIsGamePaused(false);
 
     audioService.init();
     audioService.play('click');
 
-    scheduleNextSpawn();
+    // Force first alien quickly for testing
+    setTimeout(spawnAlien, 800);
   };
 
-  const endGame = useCallback(() => {
+  const endGame = () => {
     setScreen(GameScreen.RESULTS);
     audioService.play('gameover');
 
     if (gameLoopRef.current) clearInterval(gameLoopRef.current);
     if (alienTimeoutRef.current) clearTimeout(alienTimeoutRef.current);
     if (spawnTimeoutRef.current) clearTimeout(spawnTimeoutRef.current);
-    if (patienceTimeoutRef.current) clearTimeout(patienceTimeoutRef.current);
 
     setAlienVisible(false);
-    setAlienMessage(null);
-
-    const total = reactionTimesRef.current.reduce((a, b) => a + b, 0);
-    const avg = reactionTimesRef.current.length
-      ? Math.round(total / reactionTimesRef.current.length)
-      : 0;
-
-    setStats(prev => ({ ...prev, averageReactionTimeMs: avg }));
-  }, []);
+  };
 
   // Timer
   useEffect(() => {
@@ -224,7 +192,7 @@ export default function App() {
     return () => {
       if (gameLoopRef.current) clearInterval(gameLoopRef.current);
     };
-  }, [screen, isGamePaused, endGame]);
+  }, [screen, isGamePaused]);
 
   // ---------------- UI ----------------
 
@@ -283,10 +251,9 @@ export default function App() {
             position={alienPosition}
             offsetX={motionOffset.x}
             offsetY={motionOffset.y}
-            message={alienMessage}
           />
 
-          <WaveButton onWave={() => {}} />
+          <WaveButton onWave={() => setAlienStatus('HIT')} />
 
           <button onClick={endGame} className="absolute top-4 right-4 z-50 p-2">
             <X />
