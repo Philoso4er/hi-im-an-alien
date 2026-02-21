@@ -9,7 +9,7 @@ const CameraFeed: React.FC = () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: {
-            facingMode: 'environment', // Use back camera if available
+            facingMode: 'environment',
             width: { ideal: 1280 },
             height: { ideal: 720 }
           },
@@ -21,14 +21,13 @@ const CameraFeed: React.FC = () => {
         }
       } catch (err) {
         console.error("Camera access error:", err);
-        setError("Camera access denied or unavailable. Please allow camera permissions to play.");
+        setError("Camera access denied. Please allow camera permissions.");
       }
     };
 
     startCamera();
 
     return () => {
-      // Cleanup stream
       if (videoRef.current && videoRef.current.srcObject) {
         const stream = videoRef.current.srcObject as MediaStream;
         stream.getTracks().forEach(track => track.stop());
@@ -53,7 +52,6 @@ const CameraFeed: React.FC = () => {
         muted
         className="w-full h-full object-cover"
       />
-      {/* Overlay to darken video slightly for UI pop */}
       <div className="absolute inset-0 bg-black/20 pointer-events-none" />
     </div>
   );
