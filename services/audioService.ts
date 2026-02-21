@@ -18,7 +18,6 @@ class AudioService {
     this.musicEnabled = music;
   }
 
-  // Resume context if suspended (browser autoplay policy)
   async init() {
     if (this.ctx?.state === 'suspended') {
       await this.ctx.resume();
@@ -39,7 +38,6 @@ class AudioService {
 
     switch (type) {
       case 'portal':
-        // Swirling sci-fi sound
         osc.type = 'sine';
         osc.frequency.setValueAtTime(100, now);
         osc.frequency.exponentialRampToValueAtTime(800, now + 0.3);
@@ -52,7 +50,6 @@ class AudioService {
         break;
 
       case 'spawn':
-        // High pitch ping
         osc.type = 'triangle';
         osc.frequency.setValueAtTime(800, now);
         osc.frequency.linearRampToValueAtTime(1200, now + 0.1);
@@ -64,14 +61,12 @@ class AudioService {
         break;
 
       case 'success':
-        // Cheerful major chord arpeggio
-        this.playNote(523.25, 0, 0.1); // C5
-        this.playNote(659.25, 0.1, 0.1); // E5
-        this.playNote(783.99, 0.2, 0.2); // G5
+        this.playNote(523.25, 0, 0.1);
+        this.playNote(659.25, 0.1, 0.1);
+        this.playNote(783.99, 0.2, 0.2);
         break;
 
       case 'miss':
-        // Low disappointed buzz
         osc.type = 'sawtooth';
         osc.frequency.setValueAtTime(150, now);
         osc.frequency.linearRampToValueAtTime(100, now + 0.3);
@@ -82,7 +77,6 @@ class AudioService {
         break;
 
       case 'click':
-        // Short blip
         osc.type = 'sine';
         osc.frequency.setValueAtTime(800, now);
         gain.gain.setValueAtTime(0.1, now);
@@ -99,6 +93,19 @@ class AudioService {
         gain.gain.linearRampToValueAtTime(0, now + 1);
         osc.start(now);
         osc.stop(now + 1);
+        break;
+
+      case 'conversation_start':
+        this.playNote(400, 0, 0.15);
+        this.playNote(500, 0.1, 0.15);
+        this.playNote(600, 0.2, 0.2);
+        this.playNote(800, 0.3, 0.3);
+        break;
+
+      case 'conversation_end':
+        this.playNote(800, 0, 0.15);
+        this.playNote(600, 0.1, 0.15);
+        this.playNote(400, 0.2, 0.3);
         break;
     }
   }
