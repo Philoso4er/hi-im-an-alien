@@ -180,8 +180,13 @@ export default function App() {
     audioService.init();
     audioService.play('click');
     
-    // Quick first spawn
+    // Quick first spawn for testing
     setTimeout(spawnAlien, 1500);
+  };
+
+  // Debug: Force spawn button (remove this later)
+  const forceSpawn = () => {
+    spawnAlien();
   };
 
   const handleSayHi = async () => {
@@ -418,6 +423,19 @@ export default function App() {
 
       {screen === GameScreen.PLAYING && (
         <>
+          {/* Debug indicator */}
+          <div className="absolute top-4 left-4 z-50 bg-black/70 backdrop-blur-sm px-3 py-2 rounded-lg text-xs font-mono">
+            <div className="text-cyan-400">State: PLAYING</div>
+            <div className="text-white">Alien: {alienVisible ? 'VISIBLE' : 'HIDDEN'}</div>
+            <div className="text-white">Status: {alienStatus}</div>
+            <button 
+              onClick={forceSpawn}
+              className="mt-2 bg-cyan-600 px-2 py-1 rounded text-white text-xs"
+            >
+              Force Spawn (Debug)
+            </button>
+          </div>
+
           <Alien
             isVisible={alienVisible}
             status={alienStatus}
