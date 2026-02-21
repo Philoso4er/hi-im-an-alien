@@ -15,7 +15,7 @@ export enum GameMode {
 
 export type AlienStatus =
   | 'IDLE'
-  | 'HIT'
+  | 'NOTICED'
   | 'MISSED'
   | 'LISTENING'
   | 'THINKING'
