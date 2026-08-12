@@ -1,6 +1,7 @@
+cat > App.tsx << 'ENDOFFILE'
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Play, BookOpen, Volume2, VolumeX, Settings as SettingsIcon } from 'lucide-react';
+import { Play, BookOpen, Volume2, VolumeX, TestTube2 } from 'lucide-react';
 
 import {
   GameScreen,
@@ -15,6 +16,7 @@ import Alien from './components/Alien';
 import SayHiButton from './components/SayHiButton';
 import ConversationInterface from './components/ConversationInterface';
 import EncounterCollection from './components/EncounterCollection';
+import ARTest from './components/ARTest';
 
 import { audioService } from './services/audioService';
 import { voiceService } from './services/voiceService';
@@ -37,6 +39,9 @@ export default function App() {
     edge: 'bottom'
   });
   const [alienMessage, setAlienMessage] = useState<string | null>(null);
+
+  // AR Test state
+  const [showARTest, setShowARTest] = useState(false);
   
   // Conversation state
   const [conversationMessages, setConversationMessages] = useState<ConversationMessage[]>([]);
@@ -400,6 +405,14 @@ export default function App() {
         </button>
 
         <button
+          onClick={() => setShowARTest(true)}
+          className="bg-purple-800 hover:bg-purple-700 py-3 rounded-xl font-bold flex items-center justify-center gap-2"
+        >
+          <TestTube2 className="w-5 h-5" />
+          TEST REAL AR (BETA)
+        </button>
+
+        <button
           onClick={() => setSettings(s => ({ ...s, soundEnabled: !s.soundEnabled }))}
           className="bg-gray-800 hover:bg-gray-700 py-3 rounded-xl font-bold flex items-center justify-center gap-2"
         >
@@ -485,6 +498,11 @@ export default function App() {
           onClose={() => setScreen(GameScreen.MENU)}
         />
       )}
+
+      {showARTest && <ARTest onClose={() => setShowARTest(false)} />}
     </div>
   );
 }
+ENDOFFILE
+
+echo "✅ App.tsx updated"
