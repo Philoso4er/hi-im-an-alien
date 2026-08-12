@@ -1,4 +1,3 @@
-cat > App.tsx << 'ENDOFFILE'
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { Play, BookOpen, Volume2, VolumeX, TestTube2 } from 'lucide-react';
@@ -503,6 +502,3 @@ export default function App() {
     </div>
   );
 }
-ENDOFFILE
-
-echo "✅ App.tsx updated"

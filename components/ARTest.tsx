@@ -1,4 +1,3 @@
-cat > components/ARTest.tsx << 'ENDOFFILE'
 import React from 'react';
 import { X } from 'lucide-react';
 
@@ -64,6 +63,3 @@ const ARTest: React.FC<ARTestProps> = ({ onClose }) => {
 };
 
 export default ARTest;
-ENDOFFILE
-
-echo "✅ components/ARTest.tsx created"
