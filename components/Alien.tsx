@@ -26,9 +26,7 @@ const Alien: React.FC<AlienProps> = ({
   const depthNorm = clamp((topPercent - 20) / 40, 0, 1);
 
   const scale = 0.85 + depthNorm * 0.3;
-  const blur = (1 - depthNorm) * 1.2;
-
-  // BODY sway
+  const blur = (1 - depthNorm) * 0.6; // reduced so shading detail survives
   const bodyVariants = {
     IDLE: {
       y: [0, -6, 0],
@@ -50,7 +48,7 @@ const Alien: React.FC<AlienProps> = ({
     MISSED: { scale: 0.85, opacity: 0.4, y: 20, transition: { duration: 0.6 } }
   };
 
-  // RIGHT ARM (relaxed at side) — shoulder pivot only, subtle sway
+  // RIGHT ARM — relaxed, single segment, pivots at shoulder joint
   const rightUpperArmVariants = {
     IDLE: { rotate: [6, 12, 6], transition: { repeat: Infinity, duration: 3.5, ease: 'easeInOut' } },
     NOTICED: { rotate: 70, transition: { type: 'spring', stiffness: 250, damping: 12 } },
@@ -60,7 +58,7 @@ const Alien: React.FC<AlienProps> = ({
     MISSED: { rotate: 35, opacity: 0.4 }
   };
 
-  // LEFT ARM — UPPER segment: raises to waving position, holds it
+  // LEFT ARM — upper segment holds the raised wave position
   const leftUpperArmVariants = {
     IDLE: { rotate: -100, transition: { type: 'spring', stiffness: 120, damping: 14 } },
     NOTICED: { rotate: -115, transition: { type: 'spring', stiffness: 250, damping: 12 } },
@@ -70,7 +68,7 @@ const Alien: React.FC<AlienProps> = ({
     MISSED: { rotate: -20, opacity: 0.4, transition: { duration: 0.6 } }
   };
 
-  // LEFT ARM — FOREARM segment: this is what actually "waves" back and forth at the elbow
+  // LEFT ARM — forearm segment: actual back-and-forth wave motion at the elbow
   const leftForearmVariants = {
     IDLE: {
       rotate: [-15, 15, -15],
@@ -164,14 +162,6 @@ const Alien: React.FC<AlienProps> = ({
                     <stop offset="0%" stopColor="#000000" stopOpacity="0.45" />
                     <stop offset="100%" stopColor="#000000" stopOpacity="0" />
                   </radialGradient>
-
-                  <filter id="softGlow">
-                    <feGaussianBlur stdDeviation="1.5" result="coloredBlur" />
-                    <feMerge>
-                      <feMergeNode in="coloredBlur" />
-                      <feMergeNode in="SourceGraphic" />
-                    </feMerge>
-                  </filter>
                 </defs>
 
                 {/* GROUND SHADOW */}
@@ -192,97 +182,62 @@ const Alien: React.FC<AlienProps> = ({
                   <ellipse cx="57" cy="136" rx="8" ry="4" fill="url(#volumeShade)" />
                 </motion.g>
 
-                {/* TORSO — shoulders sit at (32,62) and (68,62), arms will attach exactly there */}
+                {/* TORSO */}
                 <ellipse cx="50" cy="83" rx="21" ry="31" fill="url(#skinBase)" />
                 <ellipse cx="50" cy="83" rx="21" ry="31" fill="url(#iridescent)" opacity="0.4" />
                 <ellipse cx="50" cy="83" rx="21" ry="31" fill="url(#volumeShade)" />
                 <ellipse cx="42" cy="70" rx="7" ry="10" fill="url(#glossHighlight)" />
 
-                {/* RIGHT ARM — single segment, relaxed at side, pivots exactly at shoulder */}
-                <motion.g
-                  variants={rightUpperArmVariants}
-                  animate={status}
-                  style={{ transformOrigin: '67px 62px' }}
-                >
-                  <path
-                    d="M 67 62 Q 74 74 70 92"
-                    fill="none"
-                    stroke="url(#skinBase)"
-                    strokeWidth="11"
-                    strokeLinecap="round"
-                  />
-                  <path
-                    d="M 67 62 Q 74 74 70 92"
-                    fill="none"
-                    stroke="url(#iridescent)"
-                    strokeWidth="11"
-                    strokeLinecap="round"
-                    opacity="0.3"
-                  />
-                  <circle cx="70" cy="93" r="5.5" fill="url(#skinBase)" />
-                  <circle cx="70" cy="93" r="5.5" fill="url(#volumeShade)" />
-                </motion.g>
-
-                {/* LEFT ARM — TWO segments: upper arm (shoulder pivot) + forearm (elbow pivot, this waves) */}
-                <motion.g
-                  variants={leftUpperArmVariants}
-                  animate={status}
-                  style={{ transformOrigin: '33px 62px' }}
-                >
-                  {/* Upper arm: shoulder (33,62) to elbow (33,80) in local space, rotated by parent */}
-                  <path
-                    d="M 33 62 Q 28 72 30 80"
-                    fill="none"
-                    stroke="url(#skinBase)"
-                    strokeWidth="11"
-                    strokeLinecap="round"
-                  />
-                  <path
-                    d="M 33 62 Q 28 72 30 80"
-                    fill="none"
-                    stroke="url(#iridescent)"
-                    strokeWidth="11"
-                    strokeLinecap="round"
-                    opacity="0.3"
-                  />
-
-                  {/* Forearm group — pivots at elbow point (30,80), this is the actual waving joint */}
+                {/* RIGHT ARM — translated to shoulder (67,62), rotates around local (0,0) */}
+                <g transform="translate(67, 62)">
                   <motion.g
-                    variants={leftForearmVariants}
+                    variants={rightUpperArmVariants}
                     animate={status}
-                    style={{ transformOrigin: '30px 80px' }}
+                    style={{ transformOrigin: '0px 0px' }}
                   >
-                    <path
-                      d="M 30 80 Q 22 72 18 58"
-                      fill="none"
-                      stroke="url(#skinBase)"
-                      strokeWidth="9"
-                      strokeLinecap="round"
-                    />
-                    <path
-                      d="M 30 80 Q 22 72 18 58"
-                      fill="none"
-                      stroke="url(#iridescent)"
-                      strokeWidth="9"
-                      strokeLinecap="round"
-                      opacity="0.3"
-                    />
-                    {/* Hand */}
-                    <circle cx="17" cy="56" r="6" fill="url(#skinBase)" />
-                    <circle cx="17" cy="56" r="6" fill="url(#volumeShade)" />
-                    {/* Small finger hints for readability at this scale */}
-                    <path d="M 14 51 L 12 47" stroke="url(#skinBase)" strokeWidth="2.5" strokeLinecap="round" />
-                    <path d="M 17 50 L 17 45" stroke="url(#skinBase)" strokeWidth="2.5" strokeLinecap="round" />
-                    <path d="M 20 51 L 22 47" stroke="url(#skinBase)" strokeWidth="2.5" strokeLinecap="round" />
+                    <path d="M 0 0 Q 7 12 3 30" fill="none" stroke="url(#skinBase)" strokeWidth="11" strokeLinecap="round" />
+                    <path d="M 0 0 Q 7 12 3 30" fill="none" stroke="url(#iridescent)" strokeWidth="11" strokeLinecap="round" opacity="0.3" />
+                    <circle cx="3" cy="31" r="5.5" fill="url(#skinBase)" />
+                    <circle cx="3" cy="31" r="5.5" fill="url(#volumeShade)" />
                   </motion.g>
-                </motion.g>
+                </g>
 
-                {/* NECK — overlaps into head and torso, no visible seam */}
+                {/* LEFT ARM — translated to shoulder (33,62). Upper arm rotates at local (0,0). */}
+                <g transform="translate(33, 62)">
+                  <motion.g
+                    variants={leftUpperArmVariants}
+                    animate={status}
+                    style={{ transformOrigin: '0px 0px' }}
+                  >
+                    <path d="M 0 0 Q -5 10 -3 18" fill="none" stroke="url(#skinBase)" strokeWidth="11" strokeLinecap="round" />
+                    <path d="M 0 0 Q -5 10 -3 18" fill="none" stroke="url(#iridescent)" strokeWidth="11" strokeLinecap="round" opacity="0.3" />
+
+                    {/* Forearm: translated to elbow (-3,18) IN THE UPPER ARM'S ROTATED FRAME — 
+                        this is what makes the two segments stay physically connected as the shoulder rotates */}
+                    <g transform="translate(-3, 18)">
+                      <motion.g
+                        variants={leftForearmVariants}
+                        animate={status}
+                        style={{ transformOrigin: '0px 0px' }}
+                      >
+                        <path d="M 0 0 Q -8 -8 -12 -22" fill="none" stroke="url(#skinBase)" strokeWidth="9" strokeLinecap="round" />
+                        <path d="M 0 0 Q -8 -8 -12 -22" fill="none" stroke="url(#iridescent)" strokeWidth="9" strokeLinecap="round" opacity="0.3" />
+                        <circle cx="-13" cy="-24" r="6" fill="url(#skinBase)" />
+                        <circle cx="-13" cy="-24" r="6" fill="url(#volumeShade)" />
+                        <path d="M -16 -29 L -18 -33" stroke="url(#skinBase)" strokeWidth="2.5" strokeLinecap="round" />
+                        <path d="M -13 -30 L -13 -35" stroke="url(#skinBase)" strokeWidth="2.5" strokeLinecap="round" />
+                        <path d="M -10 -29 L -8 -33" stroke="url(#skinBase)" strokeWidth="2.5" strokeLinecap="round" />
+                      </motion.g>
+                    </g>
+                  </motion.g>
+                </g>
+
+                {/* NECK */}
                 <ellipse cx="50" cy="56" rx="9" ry="9" fill="url(#skinBase)" />
                 <ellipse cx="50" cy="56" rx="9" ry="9" fill="url(#volumeShade)" />
 
                 {/* HEAD */}
-                <ellipse cx="50" cy="30" rx="27" ry="25" fill="url(#skinBase)" filter="url(#softGlow)" />
+                <ellipse cx="50" cy="30" rx="27" ry="25" fill="url(#skinBase)" />
                 <ellipse cx="50" cy="30" rx="27" ry="25" fill="url(#iridescent)" opacity="0.4" />
                 <ellipse cx="50" cy="30" rx="27" ry="25" fill="url(#volumeShade)" />
                 <ellipse cx="41" cy="20" rx="13" ry="11" fill="url(#glossHighlight)" />
