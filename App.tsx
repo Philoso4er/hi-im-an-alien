@@ -16,6 +16,7 @@ import SayHiButton from './components/SayHiButton';
 import ConversationInterface from './components/ConversationInterface';
 import EncounterCollection from './components/EncounterCollection';
 import ARTest from './components/ARTest';
+import ARCalibration from './components/ARCalibration';
 
 import { audioService } from './services/audioService';
 import { voiceService } from './services/voiceService';
@@ -24,11 +25,16 @@ import { getAlienResponse, getAlienGreeting, getAlienFarewell } from './services
 
 const ALIEN_MIN_INTERVAL = 3000;
 const ALIEN_MAX_INTERVAL = 6000;
-const ALIEN_VISIBLE_DURATION = 5000; // 5 seconds to say hi
-const CONVERSATION_TIME_LIMIT = 90; // 90 seconds per conversation
+const ALIEN_VISIBLE_DURATION = 5000;
+const CONVERSATION_TIME_LIMIT = 90;
+
+interface OrientationSample {
+  alpha: number;
+  beta: number;
+  gamma: number;
+}
 
 export default function App() {
-  // ---------------- STATE ----------------
   const [screen, setScreen] = useState<GameScreen>(GameScreen.SPLASH);
   const [alienVisible, setAlienVisible] = useState(false);
   const [alienStatus, setAlienStatus] = useState<AlienStatus>('IDLE');
@@ -39,36 +45,39 @@ export default function App() {
   });
   const [alienMessage, setAlienMessage] = useState<string | null>(null);
 
-  // AR Test state
   const [showARTest, setShowARTest] = useState(false);
-  
-  // Conversation state
+
+  const [motionSupported] = useState<boolean>(
+    () => typeof window !== 'undefined' && 'DeviceOrientationEvent' in window
+  );
+  const [motionPermissionGranted, setMotionPermissionGranted] = useState(false);
+  const [placed, setPlaced] = useState(false);
+  const [anchor, setAnchor] = useState<OrientationSample | null>(null);
+  const [liveOrientation, setLiveOrientation] = useState<OrientationSample>({
+    alpha: 0,
+    beta: 0,
+    gamma: 0
+  });
+  const [motionOffset, setMotionOffset] = useState({ x: 0, y: 0 });
+  const [arOpacity, setArOpacity] = useState(1);
+
   const [conversationMessages, setConversationMessages] = useState<ConversationMessage[]>([]);
   const [conversationTimeLeft, setConversationTimeLeft] = useState(CONVERSATION_TIME_LIMIT);
   const [currentEncounterId, setCurrentEncounterId] = useState<string>('');
   const [encounterStartTime, setEncounterStartTime] = useState<number>(0);
-  
-  // Voice state
+
   const [isListening, setIsListening] = useState(false);
-  
-  // Settings
+
   const [settings, setSettings] = useState<Settings>({
     soundEnabled: true,
     voiceEnabled: voiceService.isSupported(),
     vibrationEnabled: true
   });
 
-  // Device motion for AR illusion
-  const [motionOffset, setMotionOffset] = useState({ x: 0, y: 0 });
-
-  // Refs
   const alienTimeoutRef = useRef<number | null>(null);
   const spawnTimeoutRef = useRef<number | null>(null);
   const conversationTimerRef = useRef<number | null>(null);
 
-  // ---------------- EFFECTS ----------------
-
-  // Splash → Menu
   useEffect(() => {
     if (screen === GameScreen.SPLASH) {
       const t = setTimeout(() => setScreen(GameScreen.MENU), 2500);
@@ -76,26 +85,59 @@ export default function App() {
     }
   }, [screen]);
 
-  // Audio settings
   useEffect(() => {
     audioService.setSettings(settings.soundEnabled, settings.soundEnabled);
   }, [settings]);
 
-  // Device motion AR illusion
   useEffect(() => {
+    if (!motionPermissionGranted) return;
+
     const handleOrientation = (e: DeviceOrientationEvent) => {
       if (e.beta == null || e.gamma == null) return;
-      const maxOffset = 20;
-      const x = Math.max(-maxOffset, Math.min(maxOffset, e.gamma));
-      const y = Math.max(-maxOffset, Math.min(maxOffset, e.beta));
-      setMotionOffset({ x: x * 0.6, y: y * 0.6 });
+      setLiveOrientation({
+        alpha: e.alpha ?? 0,
+        beta: e.beta,
+        gamma: e.gamma
+      });
     };
 
     window.addEventListener('deviceorientation', handleOrientation, true);
     return () => window.removeEventListener('deviceorientation', handleOrientation);
-  }, []);
+  }, [motionPermissionGranted]);
 
-  // Conversation timer
+  useEffect(() => {
+    if (!anchor) {
+      setMotionOffset({ x: 0, y: 0 });
+      setArOpacity(1);
+      return;
+    }
+
+    const angleDiff = (a: number, b: number) => {
+      let diff = a - b;
+      while (diff > 180) diff -= 360;
+      while (diff < -180) diff += 360;
+      return diff;
+    };
+
+    const deltaAlpha = angleDiff(liveOrientation.alpha, anchor.alpha);
+    const deltaBeta = liveOrientation.beta - anchor.beta;
+
+    const sensitivityX = 7;
+    const sensitivityY = 5;
+    const maxOffset = 260;
+
+    const rawX = -deltaAlpha * sensitivityX;
+    const rawY = deltaBeta * sensitivityY;
+
+    const clampedX = Math.max(-maxOffset, Math.min(maxOffset, rawX));
+    const clampedY = Math.max(-maxOffset, Math.min(maxOffset, rawY));
+
+    setMotionOffset({ x: clampedX, y: clampedY });
+
+    const distanceFactor = Math.max(Math.abs(clampedX), Math.abs(clampedY)) / maxOffset;
+    setArOpacity(Math.max(0.15, 1 - distanceFactor * 0.9));
+  }, [liveOrientation, anchor]);
+
   useEffect(() => {
     if (screen === GameScreen.CONVERSATION) {
       conversationTimerRef.current = window.setInterval(() => {
@@ -108,7 +150,7 @@ export default function App() {
         });
       }, 1000);
     }
-    
+
     return () => {
       if (conversationTimerRef.current) {
         clearInterval(conversationTimerRef.current);
@@ -116,15 +158,27 @@ export default function App() {
     };
   }, [screen]);
 
-  // ---------------- ALIEN SPAWNING ----------------
+  const requestMotionPermission = async (): Promise<boolean> => {
+    const DOE = (window as any).DeviceOrientationEvent;
+    if (DOE && typeof DOE.requestPermission === 'function') {
+      try {
+        const response = await DOE.requestPermission();
+        return response === 'granted';
+      } catch (err) {
+        console.error('Motion permission error:', err);
+        return false;
+      }
+    }
+    return motionSupported;
+  };
 
   const getRandomEdgePosition = (): AlienPosition => {
     const edges: Array<'top' | 'right' | 'bottom' | 'left'> = ['top', 'right', 'bottom', 'left'];
     const edge = edges[Math.floor(Math.random() * edges.length)];
-    
+
     let top = '50%';
     let left = '50%';
-    
+
     switch (edge) {
       case 'top':
         top = '15%';
@@ -143,7 +197,7 @@ export default function App() {
         top = `${Math.floor(Math.random() * 60) + 20}%`;
         break;
     }
-    
+
     return { top, left, edge };
   };
 
@@ -170,49 +224,54 @@ export default function App() {
   const handleMiss = () => {
     setAlienStatus('MISSED');
     audioService.play('miss');
-    
+
     setTimeout(() => {
       setAlienVisible(false);
       scheduleNextSpawn();
     }, 800);
   };
 
-  // ---------------- GAME ACTIONS ----------------
-
-  const startExploring = () => {
-    setScreen(GameScreen.PLAYING);
+  const startExploring = async () => {
     audioService.init();
     audioService.play('click');
-    
-    // Quick first spawn for testing
-    setTimeout(spawnAlien, 1500);
+
+    const granted = await requestMotionPermission();
+    setMotionPermissionGranted(granted);
+
+    setPlaced(false);
+    setAnchor(null);
+    setScreen(GameScreen.PLAYING);
   };
 
-  // Debug: Force spawn button (remove this later)
+  const handlePlaceAlien = () => {
+    setAnchor({ ...liveOrientation });
+    setPlaced(true);
+    audioService.play('portal');
+    setTimeout(spawnAlien, 1000);
+  };
+
   const forceSpawn = () => {
     spawnAlien();
   };
 
   const handleSayHi = async () => {
     if (alienTimeoutRef.current) clearTimeout(alienTimeoutRef.current);
-    
+
     setAlienStatus('NOTICED');
     audioService.play('success');
-    
-    // Start conversation
+
     setTimeout(async () => {
       const encounterId = `encounter_${Date.now()}`;
       const startTime = Date.now();
       setCurrentEncounterId(encounterId);
       setEncounterStartTime(startTime);
-      
+
       setScreen(GameScreen.CONVERSATION);
       setConversationTimeLeft(CONVERSATION_TIME_LIMIT);
       setConversationMessages([]);
-      
+
       audioService.play('conversation_start');
-      
-      // Get alien greeting
+
       const stats = storageService.getStats();
       const timeOfDay = storageService.getTimeOfDay();
       const greeting = await getAlienGreeting({
@@ -221,25 +280,24 @@ export default function App() {
         timeOfDay,
         messageHistory: []
       });
-      
+
       const greetingMessage: ConversationMessage = {
         role: 'alien',
         content: greeting,
         timestamp: Date.now()
       };
-      
+
       setConversationMessages([greetingMessage]);
       setAlienStatus('TALKING');
       setAlienMessage(greeting);
-      
-      // Speak greeting if voice enabled
+
       if (settings.voiceEnabled) {
-        voiceService.speak(greeting, 
+        voiceService.speak(greeting,
           () => setAlienStatus('TALKING'),
           () => setAlienStatus('LISTENING')
         );
       }
-      
+
       setTimeout(() => setAlienMessage(null), 4000);
     }, 1000);
   };
@@ -250,15 +308,14 @@ export default function App() {
       content: userText,
       timestamp: Date.now()
     };
-    
+
     setConversationMessages(prev => [...prev, userMessage]);
     setAlienStatus('THINKING');
     audioService.play('message');
-    
-    // Get AI response
+
     const stats = storageService.getStats();
     const timeOfDay = storageService.getTimeOfDay();
-    
+
     const alienResponse = await getAlienResponse(userText, {
       encounterCount: stats.encounterCount,
       previousTopics: [],
@@ -268,27 +325,26 @@ export default function App() {
         content: m.content
       }))
     });
-    
+
     const alienMessage: ConversationMessage = {
       role: 'alien',
       content: alienResponse,
       timestamp: Date.now()
     };
-    
+
     setTimeout(() => {
       setConversationMessages(prev => [...prev, alienMessage]);
       setAlienStatus('TALKING');
       setAlienMessage(alienResponse);
       audioService.play('message');
-      
-      // Speak response if voice enabled
+
       if (settings.voiceEnabled) {
         voiceService.speak(alienResponse,
           () => setAlienStatus('TALKING'),
           () => setAlienStatus('LISTENING')
         );
       }
-      
+
       setTimeout(() => setAlienMessage(null), 5000);
     }, 1500);
   };
@@ -296,7 +352,7 @@ export default function App() {
   const handleStartVoice = () => {
     setIsListening(true);
     setAlienStatus('LISTENING');
-    
+
     voiceService.startListening(
       (transcript) => {
         setIsListening(false);
@@ -318,24 +374,22 @@ export default function App() {
 
   const endConversation = async () => {
     if (conversationTimerRef.current) clearInterval(conversationTimerRef.current);
-    
-    // Get farewell message
+
     const farewell = await getAlienFarewell({
       encounterCount: storageService.getStats().encounterCount,
       previousTopics: [],
       timeOfDay: storageService.getTimeOfDay(),
       messageHistory: []
     });
-    
+
     setAlienMessage(farewell);
     setAlienStatus('IDLE');
     audioService.play('conversation_end');
-    
+
     if (settings.voiceEnabled) {
       voiceService.speak(farewell);
     }
-    
-    // Save encounter
+
     const location = await storageService.getLocation();
     storageService.saveEncounter({
       id: currentEncounterId,
@@ -345,7 +399,7 @@ export default function App() {
       location: location || undefined,
       timeOfDay: storageService.getTimeOfDay()
     });
-    
+
     setTimeout(() => {
       setAlienVisible(false);
       setAlienMessage(null);
@@ -354,8 +408,6 @@ export default function App() {
       scheduleNextSpawn();
     }, 3000);
   };
-
-  // ---------------- RENDER ----------------
 
   const renderSplash = () => (
     <div className="absolute inset-0 bg-black flex flex-col items-center justify-center z-50">
@@ -399,7 +451,7 @@ export default function App() {
           onClick={() => setScreen(GameScreen.COLLECTION)}
           className="bg-gray-800 hover:bg-gray-700 py-3 rounded-xl font-bold flex items-center justify-center gap-2"
         >
-          <BookOpen className="w-5 h-5" /> 
+          <BookOpen className="w-5 h-5" />
           PAST ENCOUNTERS ({storageService.getEncounters().length})
         </button>
 
@@ -408,7 +460,7 @@ export default function App() {
           className="bg-purple-800 hover:bg-purple-700 py-3 rounded-xl font-bold flex items-center justify-center gap-2"
         >
           <TestTube2 className="w-5 h-5" />
-          TEST REAL AR (BETA)
+          TRUE 3D PLACEMENT (ARCORE/ARKIT ONLY)
         </button>
 
         <button
@@ -435,34 +487,52 @@ export default function App() {
 
       {screen === GameScreen.PLAYING && (
         <>
-          {/* Debug indicator */}
-          <div className="absolute top-4 left-4 z-50 bg-black/70 backdrop-blur-sm px-3 py-2 rounded-lg text-xs font-mono">
-            <div className="text-cyan-400">State: PLAYING</div>
-            <div className="text-white">Alien: {alienVisible ? 'VISIBLE' : 'HIDDEN'}</div>
-            <div className="text-white">Status: {alienStatus}</div>
-            <button 
-              onClick={forceSpawn}
-              className="mt-2 bg-cyan-600 px-2 py-1 rounded text-white text-xs"
-            >
-              Force Spawn (Debug)
-            </button>
-          </div>
+          {!placed && (
+            <ARCalibration onPlace={handlePlaceAlien} motionSupported={motionSupported} />
+          )}
 
-          <Alien
-            isVisible={alienVisible}
-            status={alienStatus}
-            position={alienPosition}
-            offsetX={motionOffset.x}
-            offsetY={motionOffset.y}
-            message={alienMessage}
-          />
+          {placed && (
+            <>
+              <div className="absolute top-4 left-4 z-50 bg-black/70 backdrop-blur-sm px-3 py-2 rounded-lg text-xs font-mono">
+                <div className="text-cyan-400">State: PLAYING</div>
+                <div className="text-white">Alien: {alienVisible ? 'VISIBLE' : 'HIDDEN'}</div>
+                <div className="text-white">Status: {alienStatus}</div>
+                <div className="text-white">Motion: {motionPermissionGranted ? 'ON' : 'OFF'}</div>
+                <div className="flex gap-2 mt-2">
+                  <button
+                    onClick={forceSpawn}
+                    className="bg-cyan-600 px-2 py-1 rounded text-white text-xs"
+                  >
+                    Force Spawn
+                  </button>
+                  <button
+                    onClick={() => setPlaced(false)}
+                    className="bg-purple-600 px-2 py-1 rounded text-white text-xs"
+                  >
+                    Re-place
+                  </button>
+                </div>
+              </div>
 
-          {alienVisible && alienStatus !== 'MISSED' && (
-            <SayHiButton
-              onSayHi={handleSayHi}
-              timeLeft={Math.ceil((alienTimeoutRef.current ? 
-                (ALIEN_VISIBLE_DURATION - (Date.now() - (Date.now() - ALIEN_VISIBLE_DURATION))) / 1000 : 5))}
-            />
+              <div style={{ opacity: arOpacity, transition: 'opacity 0.15s linear' }}>
+                <Alien
+                  isVisible={alienVisible}
+                  status={alienStatus}
+                  position={alienPosition}
+                  offsetX={motionOffset.x}
+                  offsetY={motionOffset.y}
+                  message={alienMessage}
+                />
+              </div>
+
+              {alienVisible && alienStatus !== 'MISSED' && (
+                <SayHiButton
+                  onSayHi={handleSayHi}
+                  timeLeft={Math.ceil((alienTimeoutRef.current ?
+                    (ALIEN_VISIBLE_DURATION - (Date.now() - (Date.now() - ALIEN_VISIBLE_DURATION))) / 1000 : 5))}
+                />
+              )}
+            </>
           )}
         </>
       )}
@@ -473,8 +543,8 @@ export default function App() {
             isVisible={true}
             status={alienStatus}
             position={alienPosition}
-            offsetX={motionOffset.x}
-            offsetY={motionOffset.y}
+            offsetX={0}
+            offsetY={0}
             message={alienMessage}
           />
 

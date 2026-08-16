@@ -26,18 +26,15 @@ const Alien: React.FC<AlienProps> = ({
   const depthNorm = clamp((topPercent - 20) / 40, 0, 1);
 
   const scale = 0.85 + depthNorm * 0.3;
-  const blur = (1 - depthNorm) * 0.6; // reduced so shading detail survives
+  const blur = (1 - depthNorm) * 0.5;
+
   const bodyVariants = {
     IDLE: {
       y: [0, -6, 0],
       rotate: [0, 1.5, -1.5, 0],
       transition: { repeat: Infinity, duration: 4, ease: 'easeInOut' }
     },
-    NOTICED: {
-      scale: 1.1,
-      y: -10,
-      transition: { type: 'spring', stiffness: 300, damping: 15 }
-    },
+    NOTICED: { scale: 1.1, y: -10, transition: { type: 'spring', stiffness: 300, damping: 15 } },
     LISTENING: { scale: 1.03, transition: { duration: 0.3 } },
     THINKING: {
       scale: [1.03, 1.06, 1.03],
@@ -48,39 +45,36 @@ const Alien: React.FC<AlienProps> = ({
     MISSED: { scale: 0.85, opacity: 0.4, y: 20, transition: { duration: 0.6 } }
   };
 
-  // RIGHT ARM — relaxed, single segment, pivots at shoulder joint
+  // Rotation convention: 0° = pointing straight down.
+  // Positive rotation sweeps toward screen-left, negative toward screen-right.
+
+  // RIGHT ARM (screen-right, character's right side) — relaxed hang, slightly outward = negative
   const rightUpperArmVariants = {
-    IDLE: { rotate: [6, 12, 6], transition: { repeat: Infinity, duration: 3.5, ease: 'easeInOut' } },
-    NOTICED: { rotate: 70, transition: { type: 'spring', stiffness: 250, damping: 12 } },
-    LISTENING: { rotate: 20 },
-    THINKING: { rotate: [20, 30, 20], transition: { repeat: Infinity, duration: 1.5 } },
-    TALKING: { rotate: [15, 25, 15], transition: { repeat: Infinity, duration: 0.7 } },
-    MISSED: { rotate: 35, opacity: 0.4 }
+    IDLE: { rotate: [-8, -15, -8], transition: { repeat: Infinity, duration: 3.5, ease: 'easeInOut' } },
+    NOTICED: { rotate: -55, transition: { type: 'spring', stiffness: 250, damping: 12 } },
+    LISTENING: { rotate: -20 },
+    THINKING: { rotate: [-20, -30, -20], transition: { repeat: Infinity, duration: 1.5 } },
+    TALKING: { rotate: [-15, -25, -15], transition: { repeat: Infinity, duration: 0.7 } },
+    MISSED: { rotate: -35, opacity: 0.4 }
   };
 
-  // LEFT ARM — upper segment holds the raised wave position
+  // LEFT ARM (screen-left) — upper segment raises OUTWARD/UP = positive rotation toward 140-155°
   const leftUpperArmVariants = {
-    IDLE: { rotate: -100, transition: { type: 'spring', stiffness: 120, damping: 14 } },
-    NOTICED: { rotate: -115, transition: { type: 'spring', stiffness: 250, damping: 12 } },
-    LISTENING: { rotate: -95 },
-    THINKING: { rotate: -60 },
-    TALKING: { rotate: -100 },
-    MISSED: { rotate: -20, opacity: 0.4, transition: { duration: 0.6 } }
+    IDLE: { rotate: 145, transition: { type: 'spring', stiffness: 120, damping: 14 } },
+    NOTICED: { rotate: 158, transition: { type: 'spring', stiffness: 250, damping: 12 } },
+    LISTENING: { rotate: 135 },
+    THINKING: { rotate: 100 },
+    TALKING: { rotate: 145 },
+    MISSED: { rotate: 10, opacity: 0.4, transition: { duration: 0.6 } }
   };
 
-  // LEFT ARM — forearm segment: actual back-and-forth wave motion at the elbow
+  // LEFT FOREARM — elbow bend RELATIVE to upper arm's rotated frame; this swing is the actual wave
   const leftForearmVariants = {
-    IDLE: {
-      rotate: [-15, 15, -15],
-      transition: { repeat: Infinity, duration: 1.1, ease: 'easeInOut' }
-    },
-    NOTICED: {
-      rotate: [-20, 20, -20],
-      transition: { repeat: Infinity, duration: 0.5 }
-    },
-    LISTENING: { rotate: 0 },
-    THINKING: { rotate: 10 },
-    TALKING: { rotate: [-10, 10, -10], transition: { repeat: Infinity, duration: 0.6 } },
+    IDLE: { rotate: [-25, 20, -25], transition: { repeat: Infinity, duration: 1.1, ease: 'easeInOut' } },
+    NOTICED: { rotate: [-30, 30, -30], transition: { repeat: Infinity, duration: 0.5 } },
+    LISTENING: { rotate: -10 },
+    THINKING: { rotate: -15 },
+    TALKING: { rotate: [-20, 15, -20], transition: { repeat: Infinity, duration: 0.6 } },
     MISSED: { rotate: 0 }
   };
 
@@ -88,10 +82,7 @@ const Alien: React.FC<AlienProps> = ({
     IDLE: { scaleY: 1 },
     NOTICED: { scaleY: 1.2, scaleX: 1.05 },
     LISTENING: { scaleY: 1.05 },
-    THINKING: {
-      scaleY: [1, 0.15, 1],
-      transition: { repeat: Infinity, duration: 2.5, repeatDelay: 0.8 }
-    },
+    THINKING: { scaleY: [1, 0.15, 1], transition: { repeat: Infinity, duration: 2.5, repeatDelay: 0.8 } },
     TALKING: { scaleY: [1, 1.05, 1], transition: { repeat: Infinity, duration: 0.5 } },
     MISSED: { scaleY: 0.3, opacity: 0.5 }
   };
@@ -138,7 +129,6 @@ const Alien: React.FC<AlienProps> = ({
                     <stop offset="55%" stopColor="#5bb8b0" />
                     <stop offset="100%" stopColor="#3a8f8a" />
                   </radialGradient>
-
                   <linearGradient id="iridescent" x1="10%" y1="0%" x2="90%" y2="100%">
                     <stop offset="0%" stopColor="#22d3ee" />
                     <stop offset="25%" stopColor="#a855f7" />
@@ -146,25 +136,21 @@ const Alien: React.FC<AlienProps> = ({
                     <stop offset="75%" stopColor="#eab308" />
                     <stop offset="100%" stopColor="#4ade80" />
                   </linearGradient>
-
                   <radialGradient id="volumeShade" cx="40%" cy="35%" r="70%">
                     <stop offset="0%" stopColor="#000000" stopOpacity="0" />
                     <stop offset="70%" stopColor="#000000" stopOpacity="0" />
                     <stop offset="100%" stopColor="#0a2e2c" stopOpacity="0.55" />
                   </radialGradient>
-
                   <radialGradient id="glossHighlight" cx="50%" cy="50%" r="50%">
                     <stop offset="0%" stopColor="#ffffff" stopOpacity="0.85" />
                     <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
                   </radialGradient>
-
                   <radialGradient id="groundShadow" cx="50%" cy="50%" r="50%">
                     <stop offset="0%" stopColor="#000000" stopOpacity="0.45" />
                     <stop offset="100%" stopColor="#000000" stopOpacity="0" />
                   </radialGradient>
                 </defs>
 
-                {/* GROUND SHADOW */}
                 <ellipse cx="50" cy="144" rx="26" ry="6" fill="url(#groundShadow)" />
 
                 {/* LEGS */}
@@ -174,7 +160,6 @@ const Alien: React.FC<AlienProps> = ({
                   <ellipse cx="43" cy="118" rx="6.5" ry="23" fill="url(#volumeShade)" />
                   <ellipse cx="43" cy="136" rx="8" ry="4" fill="url(#skinBase)" />
                   <ellipse cx="43" cy="136" rx="8" ry="4" fill="url(#volumeShade)" />
-
                   <ellipse cx="57" cy="118" rx="6.5" ry="23" fill="url(#skinBase)" />
                   <ellipse cx="57" cy="118" rx="6.5" ry="23" fill="url(#iridescent)" opacity="0.35" />
                   <ellipse cx="57" cy="118" rx="6.5" ry="23" fill="url(#volumeShade)" />
@@ -188,45 +173,33 @@ const Alien: React.FC<AlienProps> = ({
                 <ellipse cx="50" cy="83" rx="21" ry="31" fill="url(#volumeShade)" />
                 <ellipse cx="42" cy="70" rx="7" ry="10" fill="url(#glossHighlight)" />
 
-                {/* RIGHT ARM — translated to shoulder (67,62), rotates around local (0,0) */}
+                {/* RIGHT ARM — single segment, local path points straight down, rotation sets direction */}
                 <g transform="translate(67, 62)">
-                  <motion.g
-                    variants={rightUpperArmVariants}
-                    animate={status}
-                    style={{ transformOrigin: '0px 0px' }}
-                  >
-                    <path d="M 0 0 Q 7 12 3 30" fill="none" stroke="url(#skinBase)" strokeWidth="11" strokeLinecap="round" />
-                    <path d="M 0 0 Q 7 12 3 30" fill="none" stroke="url(#iridescent)" strokeWidth="11" strokeLinecap="round" opacity="0.3" />
-                    <circle cx="3" cy="31" r="5.5" fill="url(#skinBase)" />
-                    <circle cx="3" cy="31" r="5.5" fill="url(#volumeShade)" />
+                  <motion.g variants={rightUpperArmVariants} animate={status} style={{ transformOrigin: '0px 0px' }}>
+                    <path d="M 0 0 Q 2 8 0 16" fill="none" stroke="url(#skinBase)" strokeWidth="11" strokeLinecap="round" />
+                    <path d="M 0 0 Q 2 8 0 16" fill="none" stroke="url(#iridescent)" strokeWidth="11" strokeLinecap="round" opacity="0.3" />
+                    <circle cx="0" cy="17" r="5.5" fill="url(#skinBase)" />
+                    <circle cx="0" cy="17" r="5.5" fill="url(#volumeShade)" />
                   </motion.g>
                 </g>
 
-                {/* LEFT ARM — translated to shoulder (33,62). Upper arm rotates at local (0,0). */}
+                {/* LEFT ARM — upper segment, local path straight down, shoulder rotation raises it */}
                 <g transform="translate(33, 62)">
-                  <motion.g
-                    variants={leftUpperArmVariants}
-                    animate={status}
-                    style={{ transformOrigin: '0px 0px' }}
-                  >
-                    <path d="M 0 0 Q -5 10 -3 18" fill="none" stroke="url(#skinBase)" strokeWidth="11" strokeLinecap="round" />
-                    <path d="M 0 0 Q -5 10 -3 18" fill="none" stroke="url(#iridescent)" strokeWidth="11" strokeLinecap="round" opacity="0.3" />
+                  <motion.g variants={leftUpperArmVariants} animate={status} style={{ transformOrigin: '0px 0px' }}>
+                    <path d="M 0 0 Q -2 8 0 16" fill="none" stroke="url(#skinBase)" strokeWidth="11" strokeLinecap="round" />
+                    <path d="M 0 0 Q -2 8 0 16" fill="none" stroke="url(#iridescent)" strokeWidth="11" strokeLinecap="round" opacity="0.3" />
 
-                    {/* Forearm: translated to elbow (-3,18) IN THE UPPER ARM'S ROTATED FRAME — 
-                        this is what makes the two segments stay physically connected as the shoulder rotates */}
-                    <g transform="translate(-3, 18)">
-                      <motion.g
-                        variants={leftForearmVariants}
-                        animate={status}
-                        style={{ transformOrigin: '0px 0px' }}
-                      >
-                        <path d="M 0 0 Q -8 -8 -12 -22" fill="none" stroke="url(#skinBase)" strokeWidth="9" strokeLinecap="round" />
-                        <path d="M 0 0 Q -8 -8 -12 -22" fill="none" stroke="url(#iridescent)" strokeWidth="9" strokeLinecap="round" opacity="0.3" />
-                        <circle cx="-13" cy="-24" r="6" fill="url(#skinBase)" />
-                        <circle cx="-13" cy="-24" r="6" fill="url(#volumeShade)" />
-                        <path d="M -16 -29 L -18 -33" stroke="url(#skinBase)" strokeWidth="2.5" strokeLinecap="round" />
-                        <path d="M -13 -30 L -13 -35" stroke="url(#skinBase)" strokeWidth="2.5" strokeLinecap="round" />
-                        <path d="M -10 -29 L -8 -33" stroke="url(#skinBase)" strokeWidth="2.5" strokeLinecap="round" />
+                    {/* Forearm — translated to elbow (0,16) in the upper arm's OWN rotated frame,
+                        so it physically stays attached through any shoulder angle */}
+                    <g transform="translate(0, 16)">
+                      <motion.g variants={leftForearmVariants} animate={status} style={{ transformOrigin: '0px 0px' }}>
+                        <path d="M 0 0 Q 2 8 0 16" fill="none" stroke="url(#skinBase)" strokeWidth="9" strokeLinecap="round" />
+                        <path d="M 0 0 Q 2 8 0 16" fill="none" stroke="url(#iridescent)" strokeWidth="9" strokeLinecap="round" opacity="0.3" />
+                        <circle cx="0" cy="17" r="6" fill="url(#skinBase)" />
+                        <circle cx="0" cy="17" r="6" fill="url(#volumeShade)" />
+                        <path d="M -4 22 L -6 27" stroke="url(#skinBase)" strokeWidth="2.5" strokeLinecap="round" />
+                        <path d="M 0 23 L 0 28" stroke="url(#skinBase)" strokeWidth="2.5" strokeLinecap="round" />
+                        <path d="M 4 22 L 6 27" stroke="url(#skinBase)" strokeWidth="2.5" strokeLinecap="round" />
                       </motion.g>
                     </g>
                   </motion.g>
@@ -246,7 +219,6 @@ const Alien: React.FC<AlienProps> = ({
                 <motion.g variants={eyeVariants} animate={status}>
                   <path d="M 30 28 Q 30 20 41 21 Q 44 29 41 36 Q 32 37 30 28 Z" fill="#1a1a1a" />
                   <ellipse cx="35" cy="25" rx="2.5" ry="1.8" fill="#ffffff" opacity="0.55" />
-
                   <path d="M 70 28 Q 70 20 59 21 Q 56 29 59 36 Q 68 37 70 28 Z" fill="#1a1a1a" />
                   <ellipse cx="65" cy="25" rx="2.5" ry="1.8" fill="#ffffff" opacity="0.55" />
                 </motion.g>
@@ -266,11 +238,7 @@ const Alien: React.FC<AlienProps> = ({
                   strokeLinecap="round"
                   opacity="0.75"
                   animate={status === 'TALKING' ? {
-                    d: [
-                      'M40 42 Q50 47 60 42',
-                      'M40 41 Q50 48 60 41',
-                      'M42 43 Q50 45 58 43'
-                    ]
+                    d: ['M40 42 Q50 47 60 42', 'M40 41 Q50 48 60 41', 'M42 43 Q50 45 58 43']
                   } : {}}
                   transition={status === 'TALKING' ? { repeat: Infinity, duration: 0.4 } : {}}
                 />
