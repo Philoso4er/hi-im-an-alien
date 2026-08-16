@@ -45,10 +45,6 @@ const Alien: React.FC<AlienProps> = ({
     MISSED: { scale: 0.85, opacity: 0.4, y: 20, transition: { duration: 0.6 } }
   };
 
-  // Rotation convention: 0° = pointing straight down.
-  // Positive rotation sweeps toward screen-left, negative toward screen-right.
-
-  // RIGHT ARM (screen-right, character's right side) — relaxed hang, slightly outward = negative
   const rightUpperArmVariants = {
     IDLE: { rotate: [-8, -15, -8], transition: { repeat: Infinity, duration: 3.5, ease: 'easeInOut' } },
     NOTICED: { rotate: -55, transition: { type: 'spring', stiffness: 250, damping: 12 } },
@@ -58,7 +54,6 @@ const Alien: React.FC<AlienProps> = ({
     MISSED: { rotate: -35, opacity: 0.4 }
   };
 
-  // LEFT ARM (screen-left) — upper segment raises OUTWARD/UP = positive rotation toward 140-155°
   const leftUpperArmVariants = {
     IDLE: { rotate: 145, transition: { type: 'spring', stiffness: 120, damping: 14 } },
     NOTICED: { rotate: 158, transition: { type: 'spring', stiffness: 250, damping: 12 } },
@@ -68,7 +63,6 @@ const Alien: React.FC<AlienProps> = ({
     MISSED: { rotate: 10, opacity: 0.4, transition: { duration: 0.6 } }
   };
 
-  // LEFT FOREARM — elbow bend RELATIVE to upper arm's rotated frame; this swing is the actual wave
   const leftForearmVariants = {
     IDLE: { rotate: [-25, 20, -25], transition: { repeat: Infinity, duration: 1.1, ease: 'easeInOut' } },
     NOTICED: { rotate: [-30, 30, -30], transition: { repeat: Infinity, duration: 0.5 } },
@@ -136,10 +130,12 @@ const Alien: React.FC<AlienProps> = ({
                     <stop offset="75%" stopColor="#eab308" />
                     <stop offset="100%" stopColor="#4ade80" />
                   </linearGradient>
+                  {/* Widened mid-stop so small shapes (hands, feet) get proportionally more shading
+                      instead of reading as flat bright discs */}
                   <radialGradient id="volumeShade" cx="40%" cy="35%" r="70%">
                     <stop offset="0%" stopColor="#000000" stopOpacity="0" />
-                    <stop offset="70%" stopColor="#000000" stopOpacity="0" />
-                    <stop offset="100%" stopColor="#0a2e2c" stopOpacity="0.55" />
+                    <stop offset="35%" stopColor="#000000" stopOpacity="0" />
+                    <stop offset="100%" stopColor="#0a2e2c" stopOpacity="0.6" />
                   </radialGradient>
                   <radialGradient id="glossHighlight" cx="50%" cy="50%" r="50%">
                     <stop offset="0%" stopColor="#ffffff" stopOpacity="0.85" />
@@ -173,33 +169,32 @@ const Alien: React.FC<AlienProps> = ({
                 <ellipse cx="50" cy="83" rx="21" ry="31" fill="url(#volumeShade)" />
                 <ellipse cx="42" cy="70" rx="7" ry="10" fill="url(#glossHighlight)" />
 
-                {/* RIGHT ARM — single segment, local path points straight down, rotation sets direction */}
+                {/* RIGHT ARM — single stroke, rounded cap forms the hand naturally, no separate ball */}
                 <g transform="translate(67, 62)">
                   <motion.g variants={rightUpperArmVariants} animate={status} style={{ transformOrigin: '0px 0px' }}>
-                    <path d="M 0 0 Q 2 8 0 16" fill="none" stroke="url(#skinBase)" strokeWidth="11" strokeLinecap="round" />
-                    <path d="M 0 0 Q 2 8 0 16" fill="none" stroke="url(#iridescent)" strokeWidth="11" strokeLinecap="round" opacity="0.3" />
-                    <circle cx="0" cy="17" r="5.5" fill="url(#skinBase)" />
-                    <circle cx="0" cy="17" r="5.5" fill="url(#volumeShade)" />
+                    <path d="M 0 0 Q 2 9 0 19" fill="none" stroke="url(#skinBase)" strokeWidth="11" strokeLinecap="round" />
+                    <path d="M 0 0 Q 2 9 0 19" fill="none" stroke="url(#iridescent)" strokeWidth="11" strokeLinecap="round" opacity="0.3" />
+                    <path d="M 0 0 Q 2 9 0 19" fill="none" stroke="url(#volumeShade)" strokeWidth="11" strokeLinecap="round" />
                   </motion.g>
                 </g>
 
-                {/* LEFT ARM — upper segment, local path straight down, shoulder rotation raises it */}
+                {/* LEFT ARM — upper segment */}
                 <g transform="translate(33, 62)">
                   <motion.g variants={leftUpperArmVariants} animate={status} style={{ transformOrigin: '0px 0px' }}>
                     <path d="M 0 0 Q -2 8 0 16" fill="none" stroke="url(#skinBase)" strokeWidth="11" strokeLinecap="round" />
                     <path d="M 0 0 Q -2 8 0 16" fill="none" stroke="url(#iridescent)" strokeWidth="11" strokeLinecap="round" opacity="0.3" />
+                    <path d="M 0 0 Q -2 8 0 16" fill="none" stroke="url(#volumeShade)" strokeWidth="11" strokeLinecap="round" />
 
-                    {/* Forearm — translated to elbow (0,16) in the upper arm's OWN rotated frame,
-                        so it physically stays attached through any shoulder angle */}
+                    {/* Forearm — pivots at elbow (0,16) in the upper arm's rotated frame */}
                     <g transform="translate(0, 16)">
                       <motion.g variants={leftForearmVariants} animate={status} style={{ transformOrigin: '0px 0px' }}>
-                        <path d="M 0 0 Q 2 8 0 16" fill="none" stroke="url(#skinBase)" strokeWidth="9" strokeLinecap="round" />
-                        <path d="M 0 0 Q 2 8 0 16" fill="none" stroke="url(#iridescent)" strokeWidth="9" strokeLinecap="round" opacity="0.3" />
-                        <circle cx="0" cy="17" r="6" fill="url(#skinBase)" />
-                        <circle cx="0" cy="17" r="6" fill="url(#volumeShade)" />
-                        <path d="M -4 22 L -6 27" stroke="url(#skinBase)" strokeWidth="2.5" strokeLinecap="round" />
-                        <path d="M 0 23 L 0 28" stroke="url(#skinBase)" strokeWidth="2.5" strokeLinecap="round" />
-                        <path d="M 4 22 L 6 27" stroke="url(#skinBase)" strokeWidth="2.5" strokeLinecap="round" />
+                        <path d="M 0 0 Q 2 9 0 19" fill="none" stroke="url(#skinBase)" strokeWidth="9" strokeLinecap="round" />
+                        <path d="M 0 0 Q 2 9 0 19" fill="none" stroke="url(#iridescent)" strokeWidth="9" strokeLinecap="round" opacity="0.3" />
+                        <path d="M 0 0 Q 2 9 0 19" fill="none" stroke="url(#volumeShade)" strokeWidth="9" strokeLinecap="round" />
+                        {/* Fingers — small lines fanning from the stroke's rounded tip, no ball beneath them */}
+                        <path d="M -3 18 L -5 23" stroke="#3a8f8a" strokeWidth="2" strokeLinecap="round" />
+                        <path d="M 0 19 L 0 25" stroke="#3a8f8a" strokeWidth="2" strokeLinecap="round" />
+                        <path d="M 3 18 L 5 23" stroke="#3a8f8a" strokeWidth="2" strokeLinecap="round" />
                       </motion.g>
                     </g>
                   </motion.g>

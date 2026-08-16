@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { Play, BookOpen, Volume2, VolumeX, TestTube2 } from 'lucide-react';
 
@@ -23,8 +23,6 @@ import { voiceService } from './services/voiceService';
 import { storageService } from './services/storageService';
 import { getAlienResponse, getAlienGreeting, getAlienFarewell } from './services/geminiService';
 
-const ALIEN_MIN_INTERVAL = 3000;
-const ALIEN_MAX_INTERVAL = 6000;
 const ALIEN_VISIBLE_DURATION = 5000;
 const CONVERSATION_TIME_LIMIT = 90;
 
@@ -38,6 +36,8 @@ export default function App() {
   const [screen, setScreen] = useState<GameScreen>(GameScreen.SPLASH);
   const [alienVisible, setAlienVisible] = useState(false);
   const [alienStatus, setAlienStatus] = useState<AlienStatus>('IDLE');
+  // Alien always spawns at the crosshair/center — this IS the anchor point.
+  // Small jitter keeps it from feeling perfectly robotic each time.
   const [alienPosition, setAlienPosition] = useState<AlienPosition>({
     top: '50%',
     left: '50%',
@@ -75,7 +75,6 @@ export default function App() {
   });
 
   const alienTimeoutRef = useRef<number | null>(null);
-  const spawnTimeoutRef = useRef<number | null>(null);
   const conversationTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -172,54 +171,24 @@ export default function App() {
     return motionSupported;
   };
 
-  const getRandomEdgePosition = (): AlienPosition => {
-    const edges: Array<'top' | 'right' | 'bottom' | 'left'> = ['top', 'right', 'bottom', 'left'];
-    const edge = edges[Math.floor(Math.random() * edges.length)];
-
-    let top = '50%';
-    let left = '50%';
-
-    switch (edge) {
-      case 'top':
-        top = '15%';
-        left = `${Math.floor(Math.random() * 60) + 20}%`;
-        break;
-      case 'bottom':
-        top = '75%';
-        left = `${Math.floor(Math.random() * 60) + 20}%`;
-        break;
-      case 'left':
-        left = '15%';
-        top = `${Math.floor(Math.random() * 60) + 20}%`;
-        break;
-      case 'right':
-        left = '75%';
-        top = `${Math.floor(Math.random() * 60) + 20}%`;
-        break;
-    }
-
-    return { top, left, edge };
-  };
-
-  const spawnAlien = useCallback(() => {
-    if (screen !== GameScreen.PLAYING) return;
-
-    const position = getRandomEdgePosition();
-    setAlienPosition(position);
+  // Spawns the alien exactly at the crosshair point (center), with only a
+  // small amount of jitter so it doesn't look robotically identical every time.
+  const spawnAlienAtCrosshair = () => {
+    const jitterX = Math.floor(Math.random() * 6) - 3; // -3% to +3%
+    const jitterY = Math.floor(Math.random() * 6) - 3;
+    setAlienPosition({
+      top: `${50 + jitterY}%`,
+      left: `${50 + jitterX}%`,
+      edge: 'bottom'
+    });
     setAlienStatus('IDLE');
     setAlienVisible(true);
 
-    audioService.play('portal');
-    setTimeout(() => audioService.play('spawn'), 300);
+    audioService.play('spawn');
 
     if (alienTimeoutRef.current) clearTimeout(alienTimeoutRef.current);
     alienTimeoutRef.current = window.setTimeout(handleMiss, ALIEN_VISIBLE_DURATION);
-  }, [screen]);
-
-  const scheduleNextSpawn = useCallback(() => {
-    const delay = Math.random() * (ALIEN_MAX_INTERVAL - ALIEN_MIN_INTERVAL) + ALIEN_MIN_INTERVAL;
-    spawnTimeoutRef.current = window.setTimeout(spawnAlien, delay);
-  }, [spawnAlien]);
+  };
 
   const handleMiss = () => {
     setAlienStatus('MISSED');
@@ -227,7 +196,11 @@ export default function App() {
 
     setTimeout(() => {
       setAlienVisible(false);
-      scheduleNextSpawn();
+      // Require re-placement for the next alien — this is what creates the
+      // "search for it" feel without GPS: you decide where it shows up next
+      // by where you point and tap.
+      setPlaced(false);
+      setAnchor(null);
     }, 800);
   };
 
@@ -247,11 +220,11 @@ export default function App() {
     setAnchor({ ...liveOrientation });
     setPlaced(true);
     audioService.play('portal');
-    setTimeout(spawnAlien, 1000);
+    setTimeout(spawnAlienAtCrosshair, 800);
   };
 
   const forceSpawn = () => {
-    spawnAlien();
+    spawnAlienAtCrosshair();
   };
 
   const handleSayHi = async () => {
@@ -405,7 +378,8 @@ export default function App() {
       setAlienMessage(null);
       setConversationMessages([]);
       setScreen(GameScreen.PLAYING);
-      scheduleNextSpawn();
+      setPlaced(false);
+      setAnchor(null);
     }, 3000);
   };
 
@@ -473,7 +447,7 @@ export default function App() {
       </div>
 
       <p className="text-gray-500 text-xs mt-8 text-center max-w-md">
-        Each alien appears for 5 seconds. Say hi to start a 90-second conversation.
+        Point your camera somewhere and place your alien. Say hi within 5 seconds before it vanishes.
       </p>
     </div>
   );
@@ -506,7 +480,7 @@ export default function App() {
                     Force Spawn
                   </button>
                   <button
-                    onClick={() => setPlaced(false)}
+                    onClick={() => { setPlaced(false); setAnchor(null); }}
                     className="bg-purple-600 px-2 py-1 rounded text-white text-xs"
                   >
                     Re-place
