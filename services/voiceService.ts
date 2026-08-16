@@ -5,7 +5,6 @@ class VoiceService {
   private currentUtterance: SpeechSynthesisUtterance | null = null;
 
   constructor() {
-    // Speech Recognition
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     
     if (SpeechRecognition) {
@@ -15,7 +14,6 @@ class VoiceService {
       this.recognition.lang = 'en-US';
     }
 
-    // Speech Synthesis
     if ('speechSynthesis' in window) {
       this.synthesis = window.speechSynthesis;
     }
@@ -65,6 +63,37 @@ class VoiceService {
     }
   }
 
+  // Voices ranked by preference — deeper/male/neutral voices first,
+  // ordered by how commonly they're available across Chrome/Safari/Edge
+  private findBestVoice(): SpeechSynthesisVoice | undefined {
+    if (!this.synthesis) return undefined;
+    const voices = this.synthesis.getVoices();
+
+    const preferredNames = [
+      'Google UK English Male',
+      'Microsoft David',
+      'Microsoft Guy',
+      'Daniel',
+      'Alex',
+      'Fred',
+      'Male'
+    ];
+
+    for (const name of preferredNames) {
+      const match = voices.find(v => v.name.includes(name));
+      if (match) return match;
+    }
+
+    // Fallback: any voice NOT explicitly flagged female, prefer English
+    const nonFemale = voices.find(
+      v => v.lang.startsWith('en') && !v.name.toLowerCase().includes('female')
+        && !v.name.includes('Samantha') && !v.name.includes('Victoria') && !v.name.includes('Karen')
+    );
+    if (nonFemale) return nonFemale;
+
+    return voices[0];
+  }
+
   speak(
     text: string,
     onStart?: () => void,
@@ -72,24 +101,17 @@ class VoiceService {
   ): void {
     if (!this.synthesis) return;
 
-    // Cancel any ongoing speech
     this.synthesis.cancel();
 
     this.currentUtterance = new SpeechSynthesisUtterance(text);
-    
-    // Alien-ish voice settings
-    this.currentUtterance.rate = 0.9; // Slightly slower
-    this.currentUtterance.pitch = 1.2; // Higher pitch
-    this.currentUtterance.volume = 0.8;
 
-    // Try to get a more interesting voice
-    const voices = this.synthesis.getVoices();
-    const preferredVoice = voices.find(voice => 
-      voice.name.includes('Google') || 
-      voice.name.includes('Female') ||
-      voice.name.includes('Samantha')
-    );
-    
+    // Deeper, slower, more deliberate — reads as unsettling/otherworldly
+    // rather than a standard assistant voice
+    this.currentUtterance.rate = 0.82;
+    this.currentUtterance.pitch = 0.6;
+    this.currentUtterance.volume = 0.85;
+
+    const preferredVoice = this.findBestVoice();
     if (preferredVoice) {
       this.currentUtterance.voice = preferredVoice;
     }
