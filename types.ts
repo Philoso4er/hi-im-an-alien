@@ -5,7 +5,8 @@ export enum GameScreen {
   PLAYING = 'PLAYING',
   CONVERSATION = 'CONVERSATION',
   RESULTS = 'RESULTS',
-  SETTINGS = 'SETTINGS'
+  SETTINGS = 'SETTINGS',
+  COLLECTION = 'COLLECTION'
 }
 
 export enum GameMode {
@@ -52,6 +53,7 @@ export type SoundType =
   | 'click'
   | 'gameover'
   | 'conversation_start'
+  | 'message'
   | 'conversation_end';
 
 export interface ConversationMessage {

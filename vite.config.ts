@@ -10,5 +10,7 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: false,
+    // three.js lives in a lazily-loaded chunk that only WebXR-capable phones download.
+    chunkSizeWarningLimit: 600,
   },
 });

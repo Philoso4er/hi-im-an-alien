@@ -1,13 +1,21 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Hand } from 'lucide-react';
 
 interface SayHiButtonProps {
   onSayHi: () => void;
-  timeLeft: number;
+  /** Timestamp (ms) when the alien leaves; drives the countdown. */
+  deadline: number;
 }
 
-const SayHiButton: React.FC<SayHiButtonProps> = ({ onSayHi, timeLeft }) => {
+const SayHiButton: React.FC<SayHiButtonProps> = ({ onSayHi, deadline }) => {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 200);
+    return () => clearInterval(id);
+  }, []);
+  const timeLeft = Math.max(0, Math.ceil((deadline - now) / 1000));
+
   return (
     <div className="absolute bottom-8 left-0 right-0 flex flex-col items-center z-50 px-6 gap-2">
       <motion.div
