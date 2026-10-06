@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Keep 3D assets tracked
+!public/models/
+!public/models/**

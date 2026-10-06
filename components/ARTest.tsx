@@ -19,14 +19,18 @@ const ARTest: React.FC<ARTestProps> = ({ onClose }) => {
         <p className="text-cyan-400 text-sm font-mono">🧪 AR Test Mode</p>
       </div>
 
-      {/* @ts-ignore */}
       <model-viewer
-        src="https://modelviewer.dev/shared-assets/models/Astronaut.glb"
+        src="/models/alien.glb"
+        alt="Psychedelic marble alien"
         ar
         ar-modes="scene-viewer webxr quick-look"
         camera-controls
         auto-rotate
+        autoplay
+        animation-name="IDLE"
         shadow-intensity="1"
+        exposure="1.1"
+        environment-image="neutral"
         style={{ width: '100%', height: '100%', backgroundColor: '#000' }}
       >
         <button
@@ -49,8 +53,6 @@ const ARTest: React.FC<ARTestProps> = ({ onClose }) => {
         >
           👽 View in Your Space
         </button>
-
-        {/* @ts-ignore */}
       </model-viewer>
 
       <div className="absolute bottom-4 left-0 right-0 text-center z-10 pointer-events-none">
