@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AlienStatus } from '../types';
 
@@ -14,14 +14,28 @@ interface AlienProps {
 const clamp = (v: number, min: number, max: number) =>
   Math.min(max, Math.max(min, v));
 
-/** Map gameplay status → glTF animation clip name on public/models/alien.glb */
-const STATUS_CLIP: Record<AlienStatus, string> = {
-  IDLE: 'IDLE',
-  NOTICED: 'NOTICED',
-  LISTENING: 'LISTENING',
-  THINKING: 'THINKING',
-  TALKING: 'TALKING',
-  MISSED: 'MISSED',
+/**
+ * GIF sticker mapping by gameplay status.
+ *  - peek-wave: peeks from edge + waves
+ *  - standing: full/attentive presence
+ *  - walk-gesture: walks in, gestures, waves, walks off
+ */
+const STATUS_GIF: Record<AlienStatus, string> = {
+  IDLE: '/aliens/peek-wave.gif',
+  NOTICED: '/aliens/peek-wave.gif',
+  LISTENING: '/aliens/standing.gif',
+  THINKING: '/aliens/standing.gif',
+  TALKING: '/aliens/walk-gesture.gif',
+  MISSED: '/aliens/walk-gesture.gif',
+};
+
+const STATUS_ALT: Record<AlienStatus, string> = {
+  IDLE: 'Alien peeking and waving',
+  NOTICED: 'Alien peeking and waving hello',
+  LISTENING: 'Alien standing and listening',
+  THINKING: 'Alien standing and thinking',
+  TALKING: 'Alien walking and gesturing',
+  MISSED: 'Alien walking away',
 };
 
 const Alien: React.FC<AlienProps> = ({
@@ -32,27 +46,14 @@ const Alien: React.FC<AlienProps> = ({
   offsetY = 0,
   message
 }) => {
-  const viewerRef = useRef<any>(null);
   const topPercent = parseFloat(position.top);
   const depthNorm = clamp((topPercent - 20) / 40, 0, 1);
 
   const scale = 0.85 + depthNorm * 0.3;
   const blur = (1 - depthNorm) * 0.5;
-
-  useEffect(() => {
-    const el = viewerRef.current;
-    if (!el) return;
-    const clip = STATUS_CLIP[status] ?? 'IDLE';
-    el.animationName = clip;
-    // Restart so status changes always feel snappy
-    if (typeof el.play === 'function') {
-      try {
-        el.play({ repetitions: Infinity });
-      } catch {
-        el.play?.();
-      }
-    }
-  }, [status, isVisible]);
+  const gifSrc = STATUS_GIF[status] ?? STATUS_GIF.IDLE;
+  // Square walk-gesture needs a wider box; peek/standing are tall stickers
+  const isWide = gifSrc.includes('walk-gesture');
 
   return (
     <AnimatePresence>
@@ -66,8 +67,8 @@ const Alien: React.FC<AlienProps> = ({
             filter: `blur(${blur}px)`,
             zIndex: Math.round(10 + depthNorm * 10),
             transition: 'transform 0.15s linear, filter 0.15s linear',
-            width: '220px',
-            height: '340px'
+            width: isWide ? '280px' : '160px',
+            height: isWide ? '280px' : '340px'
           }}
         >
           {message && (
@@ -85,34 +86,25 @@ const Alien: React.FC<AlienProps> = ({
             initial={{ y: 60, scale: 0, opacity: 0 }}
             animate={{
               y: status === 'MISSED' ? 24 : 0,
-              scale: status === 'MISSED' ? 0.85 : 1,
-              opacity: status === 'MISSED' ? 0.45 : 1
+              scale: status === 'MISSED' ? 0.9 : 1,
+              opacity: status === 'MISSED' ? 0.55 : 1
             }}
             exit={{ y: 60, scale: 0, opacity: 0 }}
             transition={{ type: 'spring', damping: 15, stiffness: 200, delay: 0.15 }}
             className="absolute inset-0 flex items-center justify-center"
           >
-            <model-viewer
-              ref={viewerRef}
-              src="/models/alien.glb"
-              alt="Psychedelic marble alien"
-              animation-name={STATUS_CLIP[status]}
-              autoplay
-              shadow-intensity="0"
-              exposure="1.15"
-              environment-image="neutral"
-              interaction-prompt="none"
-              disable-zoom
-              camera-orbit="0deg 78deg 2.6m"
-              camera-target="0m 0.95m 0m"
-              field-of-view="28deg"
+            {/* key remounts the img so the GIF restarts on status change */}
+            <img
+              key={gifSrc + status}
+              src={gifSrc}
+              alt={STATUS_ALT[status]}
+              draggable={false}
               style={{
                 width: '100%',
                 height: '100%',
-                backgroundColor: 'transparent',
+                objectFit: 'contain',
                 pointerEvents: 'none',
-                // @ts-ignore CSS custom property
-                '--poster-color': 'transparent'
+                userSelect: 'none'
               }}
             />
           </motion.div>

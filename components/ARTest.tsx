@@ -19,46 +19,24 @@ const ARTest: React.FC<ARTestProps> = ({ onClose }) => {
         <p className="text-cyan-400 text-sm font-mono">🧪 AR Test Mode</p>
       </div>
 
-      <model-viewer
-        src="/models/alien.glb"
-        alt="Psychedelic marble alien"
-        ar
-        ar-modes="scene-viewer webxr quick-look"
-        camera-controls
-        auto-rotate
-        autoplay
-        animation-name="IDLE"
-        shadow-intensity="1"
-        exposure="1.1"
-        environment-image="neutral"
-        style={{ width: '100%', height: '100%', backgroundColor: '#000' }}
-      >
-        <button
-          slot="ar-button"
+      <div className="flex-1 flex flex-col items-center justify-center gap-6 px-6">
+        <img
+          src="/aliens/standing.gif"
+          alt="Alien standing sticker"
           style={{
-            position: 'absolute',
-            bottom: '32px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            background: 'linear-gradient(to right, #06b6d4, #a855f7)',
-            color: 'white',
-            fontWeight: 'bold',
-            padding: '16px 32px',
-            borderRadius: '9999px',
-            border: 'none',
-            fontSize: '16px',
-            boxShadow: '0 0 30px rgba(6, 182, 212, 0.6)',
-            cursor: 'pointer'
+            width: 'min(70vw, 280px)',
+            height: 'auto',
+            maxHeight: '60vh',
+            objectFit: 'contain'
           }}
-        >
-          👽 View in Your Space
-        </button>
-      </model-viewer>
+        />
+        <p className="text-gray-300 text-sm text-center max-w-sm">
+          Sticker preview — 3D AR placement retired for now. Gameplay uses the same GIF stickers by status.
+        </p>
+      </div>
 
       <div className="absolute bottom-4 left-0 right-0 text-center z-10 pointer-events-none">
-        <p className="text-gray-400 text-xs">
-          Drag to rotate • Tap button to place in real world
-        </p>
+        <p className="text-gray-500 text-xs">Standing alien GIF · status stickers live in gameplay</p>
       </div>
     </div>
   );
