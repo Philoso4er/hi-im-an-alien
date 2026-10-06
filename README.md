@@ -14,6 +14,12 @@ A unique AR-style mobile game where mysterious aliens appear in your world throu
 - **🧠 Alien Memory**: The alien vaguely remembers past conversations
 
 
+## 🌍 Grounded alien (AR vs camera fallback)
+
+- **Android Chrome (ARCore / WebXR):** tap **Start AR (real floor)**, point at the floor until a ring appears, then **Place Alien Here**. The alien GIF is drawn on a camera-facing plane standing on that real floor point, with a soft contact shadow, and an invisible "corner" beside it so it leans out from behind something. three.js is only downloaded on these devices.
+- **iPhone Safari / desktop:** the normal camera view is used. The alien stands on a fixed floor line near the bottom of the screen (with a contact shadow) and peeks in from the right edge of the screen.
+- **Conversation:** the alien walks in and stops on a "presenting" gesture (frame 88 of `walk-gesture.gif`); the chat panel appears where it points and the GIF stays frozen while you chat. When you close the chat it waves goodbye and walks off.
+
 ## 🎮 How to Play
 
 1. **START EXPLORING** - Camera activates and you enter discovery mode

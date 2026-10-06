@@ -1,11 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { motion } from 'framer-motion';
+import React, { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Play, BookOpen, Volume2, VolumeX, TestTube2 } from 'lucide-react';
 
 import {
   GameScreen,
   AlienStatus,
-  AlienPosition,
   ConversationMessage,
   Settings
 } from './types';
@@ -17,11 +16,23 @@ import ConversationInterface from './components/ConversationInterface';
 import EncounterCollection from './components/EncounterCollection';
 import ARTest from './components/ARTest';
 import ARCalibration from './components/ARCalibration';
+import {
+  computeStageLayout,
+  computeXRChatRect,
+  ConversationPhase,
+  useViewport
+} from './components/alienStage';
+import type { XRStageHandle, XRScreenAnchor } from './components/XRAlienStage';
+import { GifPlayer } from './services/gifPlayer';
+import { isImmersiveARSupported, requestARSession } from './services/xrService';
 
 import { audioService } from './services/audioService';
 import { voiceService } from './services/voiceService';
 import { storageService } from './services/storageService';
 import { getAlienResponse, getAlienGreeting, getAlienFarewell } from './services/geminiService';
+
+// three.js is only downloaded on devices that actually support WebXR AR.
+const XRAlienStage = lazy(() => import('./components/XRAlienStage'));
 
 const ALIEN_VISIBLE_DURATION = 5000;
 const CONVERSATION_TIME_LIMIT = 90;
@@ -36,13 +47,8 @@ export default function App() {
   const [screen, setScreen] = useState<GameScreen>(GameScreen.SPLASH);
   const [alienVisible, setAlienVisible] = useState(false);
   const [alienStatus, setAlienStatus] = useState<AlienStatus>('IDLE');
-  // Alien always spawns at the crosshair/center — this IS the anchor point.
-  // Small jitter keeps it from feeling perfectly robotic each time.
-  const [alienPosition, setAlienPosition] = useState<AlienPosition>({
-    top: '50%',
-    left: '50%',
-    edge: 'bottom'
-  });
+  const [conversationPhase, setConversationPhase] = useState<ConversationPhase>('none');
+  const [spawnDeadline, setSpawnDeadline] = useState(0);
   const [alienMessage, setAlienMessage] = useState<string | null>(null);
 
   const [showARTest, setShowARTest] = useState(false);
@@ -70,12 +76,38 @@ export default function App() {
 
   const [settings, setSettings] = useState<Settings>({
     soundEnabled: true,
+    musicEnabled: false,
     voiceEnabled: voiceService.isSupported(),
     vibrationEnabled: true
   });
 
   const alienTimeoutRef = useRef<number | null>(null);
   const conversationTimerRef = useRef<number | null>(null);
+  const phaseSafetyRef = useRef<number | null>(null);
+  const endingRef = useRef(false);
+  const messagesRef = useRef<ConversationMessage[]>([]);
+  messagesRef.current = conversationMessages;
+
+  // One GIF player for the whole game: drawn in the DOM (fallback) or as a WebXR texture.
+  const alienPlayer = useMemo(() => new GifPlayer(), []);
+  const viewport = useViewport();
+  const layout = useMemo(
+    () => computeStageLayout(viewport.vw, viewport.vh, viewport.visualH),
+    [viewport]
+  );
+
+  // ---- WebXR (real floor anchoring) ----
+  const rootRef = useRef<HTMLDivElement>(null);
+  const xrStageRef = useRef<XRStageHandle>(null);
+  const [xrSupported, setXrSupported] = useState(false);
+  const [xrSession, setXrSession] = useState<XRSession | null>(null);
+  const [xrHasFloor, setXrHasFloor] = useState(false);
+  const [xrAnchor, setXrAnchor] = useState<XRScreenAnchor | null>(null);
+  const [xrError, setXrError] = useState<string | null>(null);
+
+  useEffect(() => {
+    isImmersiveARSupported().then(setXrSupported);
+  }, []);
 
   useEffect(() => {
     if (screen === GameScreen.SPLASH) {
@@ -142,7 +174,7 @@ export default function App() {
       conversationTimerRef.current = window.setInterval(() => {
         setConversationTimeLeft(prev => {
           if (prev <= 1) {
-            endConversation();
+            endConversationRef.current();
             return 0;
           }
           return prev - 1;
@@ -171,17 +203,14 @@ export default function App() {
     return motionSupported;
   };
 
-  // Spawns the alien exactly at the crosshair point (center), with only a
-  // small amount of jitter so it doesn't look robotically identical every time.
+  // Spawns the alien. In the camera fallback it stands on a fixed floor line and
+  // peeks in from the right edge of the screen; in WebXR it stands on the floor
+  // point that was under the reticle.
   const spawnAlienAtCrosshair = () => {
-    const jitterX = Math.floor(Math.random() * 6) - 3; // -3% to +3%
-    const jitterY = Math.floor(Math.random() * 6) - 3;
-    setAlienPosition({
-      top: `${50 + jitterY}%`,
-      left: `${50 + jitterX}%`,
-      edge: 'bottom'
-    });
+    setAlienMessage(null);
+    setConversationPhase('none');
     setAlienStatus('IDLE');
+    setSpawnDeadline(Date.now() + ALIEN_VISIBLE_DURATION);
     setAlienVisible(true);
 
     audioService.play('spawn');
@@ -216,7 +245,36 @@ export default function App() {
     setScreen(GameScreen.PLAYING);
   };
 
+  const startXR = () => {
+    const root = rootRef.current;
+    if (!root) return;
+    audioService.init();
+    setXrError(null);
+    // requestSession must run synchronously inside the tap handler.
+    requestARSession(root)
+      .then(session => {
+        session.addEventListener('end', () => {
+          setXrSession(null);
+          setXrHasFloor(false);
+          setXrAnchor(null);
+          setPlaced(false);
+          setAnchor(null);
+        });
+        setPlaced(false);
+        setAnchor(null);
+        setXrSession(session);
+      })
+      .catch(err => {
+        console.error('Could not start AR:', err);
+        setXrError('AR could not start on this device — using the camera view instead.');
+      });
+  };
+
   const handlePlaceAlien = () => {
+    if (xrSession) {
+      // Anchor to the real floor point under the reticle.
+      if (!xrStageRef.current?.place()) return;
+    }
     setAnchor({ ...liveOrientation });
     setPlaced(true);
     audioService.play('portal');
@@ -239,9 +297,15 @@ export default function App() {
       setCurrentEncounterId(encounterId);
       setEncounterStartTime(startTime);
 
+      endingRef.current = false;
+      setAlienMessage(null);
       setScreen(GameScreen.CONVERSATION);
+      // Walk in, stop on the presenting gesture; the chat appears where it points.
+      setConversationPhase('walk-in');
       setConversationTimeLeft(CONVERSATION_TIME_LIMIT);
       setConversationMessages([]);
+      if (phaseSafetyRef.current) clearTimeout(phaseSafetyRef.current);
+      phaseSafetyRef.current = window.setTimeout(handleWalkInDone, 9000);
 
       audioService.play('conversation_start');
 
@@ -260,9 +324,9 @@ export default function App() {
         timestamp: Date.now()
       };
 
+      if (endingRef.current) return;
       setConversationMessages([greetingMessage]);
       setAlienStatus('TALKING');
-      setAlienMessage(greeting);
 
       if (settings.voiceEnabled) {
         voiceService.speak(greeting,
@@ -270,9 +334,12 @@ export default function App() {
           () => setAlienStatus('LISTENING')
         );
       }
-
-      setTimeout(() => setAlienMessage(null), 4000);
     }, 1000);
+  };
+
+  const handleWalkInDone = () => {
+    if (phaseSafetyRef.current) clearTimeout(phaseSafetyRef.current);
+    setConversationPhase(p => (p === 'walk-in' ? 'hold' : p));
   };
 
   const handleSendMessage = async (userText: string) => {
@@ -306,9 +373,9 @@ export default function App() {
     };
 
     setTimeout(() => {
+      if (endingRef.current) return;
       setConversationMessages(prev => [...prev, alienMessage]);
       setAlienStatus('TALKING');
-      setAlienMessage(alienResponse);
       audioService.play('message');
 
       if (settings.voiceEnabled) {
@@ -317,8 +384,6 @@ export default function App() {
           () => setAlienStatus('LISTENING')
         );
       }
-
-      setTimeout(() => setAlienMessage(null), 5000);
     }, 1500);
   };
 
@@ -346,8 +411,20 @@ export default function App() {
   };
 
   const endConversation = async () => {
+    if (endingRef.current) return;
+    endingRef.current = true;
     if (conversationTimerRef.current) clearInterval(conversationTimerRef.current);
+    if (phaseSafetyRef.current) clearTimeout(phaseSafetyRef.current);
+    voiceService.stopListening();
+    setIsListening(false);
 
+    // Close the chat and let the GIF play on: wave goodbye, then walk out.
+    setConversationPhase('walk-out');
+    setAlienStatus('IDLE');
+    audioService.play('conversation_end');
+    phaseSafetyRef.current = window.setTimeout(finishConversation, 12000);
+
+    const messages = messagesRef.current;
     const farewell = await getAlienFarewell({
       encounterCount: storageService.getStats().encounterCount,
       previousTopics: [],
@@ -355,12 +432,11 @@ export default function App() {
       messageHistory: []
     });
 
-    setAlienMessage(farewell);
-    setAlienStatus('IDLE');
-    audioService.play('conversation_end');
-
-    if (settings.voiceEnabled) {
-      voiceService.speak(farewell);
+    if (endingRef.current) {
+      setAlienMessage(farewell);
+      if (settings.voiceEnabled) {
+        voiceService.speak(farewell);
+      }
     }
 
     const location = await storageService.getLocation();
@@ -368,19 +444,25 @@ export default function App() {
       id: currentEncounterId,
       startTime: encounterStartTime,
       endTime: Date.now(),
-      messages: conversationMessages,
+      messages,
       location: location || undefined,
       timeOfDay: storageService.getTimeOfDay()
     });
+  };
+  const endConversationRef = useRef(endConversation);
+  endConversationRef.current = endConversation;
 
-    setTimeout(() => {
-      setAlienVisible(false);
-      setAlienMessage(null);
-      setConversationMessages([]);
-      setScreen(GameScreen.PLAYING);
-      setPlaced(false);
-      setAnchor(null);
-    }, 3000);
+  const finishConversation = () => {
+    if (!endingRef.current) return;
+    endingRef.current = false;
+    if (phaseSafetyRef.current) clearTimeout(phaseSafetyRef.current);
+    setAlienVisible(false);
+    setAlienMessage(null);
+    setConversationMessages([]);
+    setConversationPhase('none');
+    setScreen(GameScreen.PLAYING);
+    setPlaced(false);
+    setAnchor(null);
   };
 
   const renderSplash = () => (
@@ -452,17 +534,67 @@ export default function App() {
     </div>
   );
 
+  const inConversation = screen === GameScreen.CONVERSATION;
+  const alienLayerActive = (screen === GameScreen.PLAYING && placed) || inConversation;
+  const chatRect = xrSession ? computeXRChatRect(layout, xrAnchor) : layout.chat;
+
   return (
-    <div className="relative w-full h-dvh bg-black overflow-hidden">
-      <CameraFeed />
+    <div
+      ref={rootRef}
+      className={`relative w-full h-dvh overflow-hidden ${xrSession ? 'bg-transparent' : 'bg-black'}`}
+    >
+      {/* In WebXR the browser shows the camera itself; don't fight it for the camera. */}
+      {!xrSession && <CameraFeed />}
+
+      {xrSession && (
+        <Suspense fallback={null}>
+          <XRAlienStage
+            ref={xrStageRef}
+            session={xrSession}
+            player={alienPlayer}
+            isVisible={inConversation || alienVisible}
+            status={alienStatus}
+            scene={inConversation ? 'conversation' : 'peek'}
+            placed={placed}
+            onReticleChange={setXrHasFloor}
+            onScreenAnchor={setXrAnchor}
+          />
+        </Suspense>
+      )}
 
       {screen === GameScreen.SPLASH && renderSplash()}
       {screen === GameScreen.MENU && renderMenu()}
 
+      {alienLayerActive && (
+        <div style={{ opacity: screen === GameScreen.PLAYING && !xrSession ? arOpacity : 1, transition: 'opacity 0.15s linear' }}>
+          <Alien
+            player={alienPlayer}
+            isVisible={inConversation || alienVisible}
+            status={alienStatus}
+            scene={inConversation ? 'conversation' : 'peek'}
+            phase={conversationPhase}
+            layout={layout}
+            renderTarget={xrSession ? 'xr' : 'dom'}
+            message={alienMessage}
+            xrBubbleAnchor={xrAnchor ? { x: xrAnchor.headX, y: xrAnchor.headY } : null}
+            onWalkInDone={handleWalkInDone}
+            onWalkOutDone={finishConversation}
+          />
+        </div>
+      )}
+
       {screen === GameScreen.PLAYING && (
         <>
           {!placed && (
-            <ARCalibration onPlace={handlePlaceAlien} motionSupported={motionSupported} />
+            <ARCalibration
+              onPlace={handlePlaceAlien}
+              motionSupported={motionSupported}
+              xrSupported={xrSupported}
+              xrActive={!!xrSession}
+              xrHasFloor={xrHasFloor}
+              xrError={xrError}
+              onStartXR={startXR}
+            />
           )}
 
           {placed && (
@@ -471,6 +603,7 @@ export default function App() {
                 <div className="text-cyan-400">State: PLAYING</div>
                 <div className="text-white">Alien: {alienVisible ? 'VISIBLE' : 'HIDDEN'}</div>
                 <div className="text-white">Status: {alienStatus}</div>
+                <div className="text-white">Mode: {xrSession ? 'WebXR floor' : 'Camera fallback'}</div>
                 <div className="text-white">Motion: {motionPermissionGranted ? 'ON' : 'OFF'}</div>
                 <div className="flex gap-2 mt-2">
                   <button
@@ -488,52 +621,31 @@ export default function App() {
                 </div>
               </div>
 
-              <div style={{ opacity: arOpacity, transition: 'opacity 0.15s linear' }}>
-                <Alien
-                  isVisible={alienVisible}
-                  status={alienStatus}
-                  position={alienPosition}
-                  offsetX={motionOffset.x}
-                  offsetY={motionOffset.y}
-                  message={alienMessage}
-                />
-              </div>
-
-              {alienVisible && alienStatus !== 'MISSED' && (
-                <SayHiButton
-                  onSayHi={handleSayHi}
-                  timeLeft={Math.ceil((alienTimeoutRef.current ?
-                    (ALIEN_VISIBLE_DURATION - (Date.now() - (Date.now() - ALIEN_VISIBLE_DURATION))) / 1000 : 5))}
-                />
+              {alienVisible && alienStatus === 'IDLE' && (
+                <SayHiButton onSayHi={handleSayHi} deadline={spawnDeadline} />
               )}
             </>
           )}
         </>
       )}
 
-      {screen === GameScreen.CONVERSATION && (
-        <>
-          <Alien
-            isVisible={true}
-            status={alienStatus}
-            position={alienPosition}
-            offsetX={0}
-            offsetY={0}
-            message={alienMessage}
-          />
-
+      <AnimatePresence>
+        {inConversation && conversationPhase === 'hold' && (
           <ConversationInterface
+            key="chat"
             messages={conversationMessages}
             timeLeft={conversationTimeLeft}
             isVoiceEnabled={settings.voiceEnabled}
             isListening={isListening}
+            isThinking={alienStatus === 'THINKING'}
+            rect={chatRect}
             onSendMessage={handleSendMessage}
             onStartVoice={handleStartVoice}
             onStopVoice={handleStopVoice}
             onEndConversation={endConversation}
           />
-        </>
-      )}
+        )}
+      </AnimatePresence>
 
       {screen === GameScreen.COLLECTION && (
         <EncounterCollection
