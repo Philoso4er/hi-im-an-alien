@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, lazy, Suspense, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Flame, Home, Pause, Play, Settings as SettingsIcon, Sparkles, X } from 'lucide-react';
+import { Flame, Home, Pause, Play, Scan, Settings as SettingsIcon, Sparkles, X } from 'lucide-react';
 
 import { GameScreen, AlienStatus, ConversationMessage } from './types';
 
@@ -15,13 +15,15 @@ import Onboarding from './components/Onboarding';
 import SettingsPanel from './components/SettingsPanel';
 import InstallSheet from './components/InstallSheet';
 import ARCalibration from './components/ARCalibration';
+import RadarHUD from './components/RadarHUD';
 import {
   computeStageLayout,
   computeXRChatRect,
   ConversationPhase,
   useViewport
 } from './components/alienStage';
-import type { XRStageHandle, XRScreenAnchor } from './components/XRAlienStage';
+import type { XRStageHandle, XRScreenAnchor, XRRadarInfo } from './components/XRAlienStage';
+import { heading, wrapDeg, DRAG_DEG_PER_PX } from './services/heading';
 import { GifPlayer } from './services/gifPlayer';
 import { isImmersiveARSupported, requestARSession } from './services/xrService';
 import { useInstallPrompt } from './hooks/useInstallPrompt';
@@ -37,15 +39,20 @@ import { getAlienResponse, getAlienGreeting, getAlienFarewell, getAIMode, startA
 // three.js is only downloaded on devices that actually support WebXR AR.
 const XRAlienStage = lazy(() => import('./components/XRAlienStage'));
 
-const ALIEN_VISIBLE_DURATION = 5000;
+const ALIEN_VISIBLE_DURATION = 5000; // Say-hi window, starts once it's actually on screen
+const FIND_WINDOW = 25000; // how long it lingers nearby before it retreats unseen
 const CONVERSATION_TIME_LIMIT = 90;
-const DEBUG = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('debug');
+const QS = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
+const DEBUG = QS.has('debug');
+/** Short gaps between wild spawns (testing). */
+const FAST = DEBUG || QS.has('fast');
+/** Hidden fallback: old reticle + "Place Alien Here" in WebXR. */
+const MANUAL_PLACE = QS.has('place');
 
-interface OrientationSample {
-  alpha: number;
-  beta: number;
-  gamma: number;
-}
+type Hunt = 'none' | 'hunting' | 'spotted';
+const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+/** Fallback view: fully leaning out within 10 deg of where you look, hidden beyond 30 deg. */
+const revealFor = (delta: number) => clamp01((30 - Math.abs(delta)) / 20);
 
 interface Toast {
   id: number;
@@ -75,10 +82,19 @@ export default function App() {
     () => typeof window !== 'undefined' && 'DeviceOrientationEvent' in window
   );
   const [motionPermissionGranted, setMotionPermissionGranted] = useState(false);
-  const [placed, setPlaced] = useState(false);
-  const [anchor, setAnchor] = useState<OrientationSample | null>(null);
-  const [liveOrientation, setLiveOrientation] = useState<OrientationSample>({ alpha: 0, beta: 0, gamma: 0 });
-  const [arOpacity, setArOpacity] = useState(1);
+  // Wild-encounter state: it spawns on its own, out of view; you turn to find it.
+  const [hunt, setHunt] = useState<Hunt>('none');
+  const huntRef = useRef<Hunt>('none');
+  huntRef.current = hunt;
+  const [peekEdge, setPeekEdge] = useState<'left' | 'right'>('right');
+  const [peekReveal, setPeekReveal] = useState(0);
+  const [radar, setRadar] = useState<{ delta: number; onScreen: boolean } | null>(null);
+  const [hasSensor, setHasSensor] = useState(false);
+  const [spawnTick, setSpawnTick] = useState(0);
+  const alienBearingRef = useRef(0);
+  const huntTimeoutRef = useRef<number | null>(null);
+  const huntDeadlineRef = useRef(0);
+  const remainingHuntRef = useRef<number | null>(null);
 
   const [conversationMessages, setConversationMessages] = useState<ConversationMessage[]>([]);
   const [conversationTimeLeft, setConversationTimeLeft] = useState(CONVERSATION_TIME_LIMIT);
@@ -122,10 +138,12 @@ export default function App() {
 
   // ---- WebXR (real floor anchoring) ----
   const rootRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<number | null>(null);
   const xrStageRef = useRef<XRStageHandle>(null);
   const [xrSupported, setXrSupported] = useState(false);
   const [xrSession, setXrSession] = useState<XRSession | null>(null);
   const [xrHasFloor, setXrHasFloor] = useState(false);
+  const [xrFloor, setXrFloor] = useState<'scanning' | 'found' | 'estimated'>('scanning');
   const [xrAnchor, setXrAnchor] = useState<XRScreenAnchor | null>(null);
   const [xrError, setXrError] = useState<string | null>(null);
 
@@ -162,34 +180,47 @@ export default function App() {
     window.setTimeout(() => setToast(cur => (cur && cur.id === id ? null : cur)), ms);
   }, []);
 
-  // ---- Device-orientation parallax (camera fallback) ----
+  // ---- Heading (where the player looks): phone orientation + drag ----
   useEffect(() => {
-    if (!motionPermissionGranted) return;
-    const handleOrientation = (e: DeviceOrientationEvent) => {
-      if (e.beta == null || e.gamma == null) return;
-      setLiveOrientation({ alpha: e.alpha ?? 0, beta: e.beta, gamma: e.gamma });
-    };
-    window.addEventListener('deviceorientation', handleOrientation, true);
-    return () => window.removeEventListener('deviceorientation', handleOrientation, true);
-  }, [motionPermissionGranted]);
+    if (!inGame) return;
+    heading.start();
+    if (heading.hasSensor) setHasSensor(true);
+    const un = heading.subscribe(() => {
+      if (heading.hasSensor) setHasSensor(true);
+    });
+    return un;
+  }, [inGame]);
 
+  // Camera/star-room fallback: radar + how far the alien leans out, from the heading.
   useEffect(() => {
-    if (!anchor) {
-      setArOpacity(1);
-      return;
-    }
-    const angleDiff = (a: number, b: number) => {
-      let diff = a - b;
-      while (diff > 180) diff -= 360;
-      while (diff < -180) diff += 360;
-      return diff;
+    if (xrSession || hunt === 'none') return;
+    let raf = 0;
+    let last = 0;
+    const loop = (t: number) => {
+      raf = requestAnimationFrame(loop);
+      if (t - last < 33) return;
+      last = t;
+      const d = wrapDeg(alienBearingRef.current - heading.value);
+      const reveal = revealFor(d);
+      // Once spotted it stops hiding and leans all the way out (unless you look well away).
+      const shown = huntRef.current === 'spotted' && Math.abs(d) < 30 ? 1 : reveal;
+      setRadar(prev =>
+        prev && Math.abs(prev.delta - d) < 0.3 && prev.onScreen === reveal >= 0.55 ? prev : { delta: d, onScreen: reveal >= 0.55 }
+      );
+      setPeekReveal(r => (Math.abs(r - shown) < 0.01 ? r : shown));
     };
-    const maxOffset = 260;
-    const clampedX = Math.max(-maxOffset, Math.min(maxOffset, -angleDiff(liveOrientation.alpha, anchor.alpha) * 7));
-    const clampedY = Math.max(-maxOffset, Math.min(maxOffset, (liveOrientation.beta - anchor.beta) * 5));
-    const distanceFactor = Math.max(Math.abs(clampedX), Math.abs(clampedY)) / maxOffset;
-    setArOpacity(Math.max(0.15, 1 - distanceFactor * 0.9));
-  }, [liveOrientation, anchor]);
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [xrSession, hunt]);
+
+  // WebXR: the stage reports where the alien is relative to the camera.
+  const handleXRRadar = useCallback((info: XRRadarInfo | null) => {
+    setRadar(prev => {
+      if (!info) return null;
+      if (prev && Math.abs(prev.delta - info.delta) < 0.5 && prev.onScreen === info.onScreen) return prev;
+      return { delta: info.delta, onScreen: info.onScreen };
+    });
+  }, []);
 
   // ---- Conversation countdown (stops while paused) ----
   useEffect(() => {
@@ -218,11 +249,16 @@ export default function App() {
     voiceService.stopSpeaking();
     voiceService.stopListening();
     setIsListening(false);
-    // Freeze the 5-second say-hi window.
+    // Freeze the 5-second say-hi window and the 25-second find window.
     if (alienTimeoutRef.current) {
       clearTimeout(alienTimeoutRef.current);
       alienTimeoutRef.current = null;
       remainingPeekRef.current = Math.max(800, spawnDeadlineRef.current - Date.now());
+    }
+    if (huntTimeoutRef.current) {
+      clearTimeout(huntTimeoutRef.current);
+      huntTimeoutRef.current = null;
+      remainingHuntRef.current = Math.max(1500, huntDeadlineRef.current - Date.now());
     }
   };
   const resume = () => {
@@ -235,6 +271,12 @@ export default function App() {
       remainingPeekRef.current = null;
       setSpawnDeadline(Date.now() + rem);
       alienTimeoutRef.current = window.setTimeout(handleMissRef.current, rem);
+    }
+    if (remainingHuntRef.current != null) {
+      const rem = remainingHuntRef.current;
+      remainingHuntRef.current = null;
+      huntDeadlineRef.current = Date.now() + rem;
+      huntTimeoutRef.current = window.setTimeout(handleUnseenRef.current, rem);
     }
   };
   const inGameRef = useRef(inGame);
@@ -266,30 +308,95 @@ export default function App() {
     return motionSupported;
   };
 
-  // Spawns the alien. In the camera fallback it stands on a fixed floor line and
-  // peeks in from the right edge of the screen; in WebXR it stands on the floor
-  // point that was under the reticle.
-  const spawnAlienAtCrosshair = () => {
-    if (pausedRef.current) return;
-    const v = rollVariant();
-    setVariant(v);
+  const clearEncounterTimers = () => {
+    if (alienTimeoutRef.current) clearTimeout(alienTimeoutRef.current);
+    if (huntTimeoutRef.current) clearTimeout(huntTimeoutRef.current);
+    alienTimeoutRef.current = null;
+    huntTimeoutRef.current = null;
+    remainingPeekRef.current = null;
+    remainingHuntRef.current = null;
+  };
+
+  /**
+   * A wild encounter: the alien turns up on its own somewhere off to the side
+   * (30-120 deg from where you look). In WebXR the stage picks a real floor spot;
+   * in the camera / star-room view it waits just past a screen edge. Nothing is
+   * placed by the player.
+   */
+  const spawnWild = (manual = false) => {
+    if (pausedRef.current || screenRef.current !== GameScreen.PLAYING || alienVisibleRef.current) return;
+    if (xrSessionRef.current) {
+      const ok = manual ? xrStageRef.current?.place() : xrStageRef.current?.spawn();
+      if (!ok) {
+        window.setTimeout(() => setSpawnTick(t => t + 1), 1500);
+        return;
+      }
+      setPeekEdge('right');
+    } else {
+      const side = Math.random() < 0.5 ? -1 : 1;
+      alienBearingRef.current = heading.value + side * (30 + Math.random() * 90);
+      setPeekEdge(side > 0 ? 'right' : 'left');
+      setPeekReveal(0);
+    }
+    setVariant(rollVariant());
     setAlienMessage(null);
     setConversationPhase('none');
     setAlienStatus('IDLE');
+    setRadar(null);
+    setAlienVisible(true);
+    setHunt('hunting');
+    huntRef.current = 'hunting';
+    hadSpawnRef.current = true;
+    haptics.pulse(10);
+
+    clearEncounterTimers();
+    huntDeadlineRef.current = Date.now() + FIND_WINDOW;
+    huntTimeoutRef.current = window.setTimeout(handleUnseenRef.current, FIND_WINDOW);
+  };
+  const hadSpawnRef = useRef(false);
+  const screenRef = useRef(screen);
+  screenRef.current = screen;
+  const alienVisibleRef = useRef(alienVisible);
+  alienVisibleRef.current = alienVisible;
+  const xrSessionRef = useRef<XRSession | null>(null);
+  xrSessionRef.current = xrSession;
+
+  /** It came into view: now the 5-second say-hi window starts. */
+  const handleSpotted = () => {
+    if (huntRef.current !== 'hunting') return;
+    if (huntTimeoutRef.current) clearTimeout(huntTimeoutRef.current);
+    huntTimeoutRef.current = null;
+    setHunt('spotted');
+    huntRef.current = 'spotted';
     spawnedAtRef.current = Date.now();
     setSpawnDeadline(Date.now() + ALIEN_VISIBLE_DURATION);
-    setAlienVisible(true);
-
     progressService.recordSighting();
+    const v = variantRef.current;
     const rare = v.rarity === 'rare' || v.rarity === 'mythic';
     audioService.play(rare ? 'rare' : 'spawn');
     if (rare) haptics.rare();
     else haptics.spot();
-
     if (alienTimeoutRef.current) clearTimeout(alienTimeoutRef.current);
     alienTimeoutRef.current = window.setTimeout(handleMissRef.current, ALIEN_VISIBLE_DURATION);
   };
+  const handleSpottedRef = useRef(handleSpotted);
+  handleSpottedRef.current = handleSpotted;
 
+  useEffect(() => {
+    if (hunt === 'hunting' && radar?.onScreen && !paused) handleSpottedRef.current();
+  }, [hunt, radar, paused]);
+
+  const retreat = (title: string, body: string) => {
+    setTimeout(() => {
+      setAlienVisible(false);
+      setHunt('none');
+      huntRef.current = 'none';
+      setRadar(null);
+      showToast({ title, body }, 3000);
+    }, 800);
+  };
+
+  /** Seen, but you didn't say hi in time. */
   const handleMiss = () => {
     alienTimeoutRef.current = null;
     setAlienStatus('MISSED');
@@ -297,27 +404,42 @@ export default function App() {
     haptics.miss();
     progressService.recordMiss();
     refreshProgress();
-
-    setTimeout(() => {
-      setAlienVisible(false);
-      // Require re-placement for the next alien: this is what creates the
-      // "search for it" feel without GPS.
-      setPlaced(false);
-      setAnchor(null);
-      showToast({ title: 'It slipped away…', body: 'Point somewhere new and wait for it again.' }, 3000);
-    }, 800);
+    retreat('It slipped away…', 'Keep looking. Something else will turn up.');
   };
   const handleMissRef = useRef(handleMiss);
   handleMissRef.current = handleMiss;
+
+  /** Never found within the find window. */
+  const handleUnseen = () => {
+    huntTimeoutRef.current = null;
+    if (huntRef.current !== 'hunting') return;
+    setAlienStatus('MISSED');
+    retreat('The signal faded…', 'Whatever it was, it moved on.');
+  };
+  const handleUnseenRef = useRef(handleUnseen);
+  handleUnseenRef.current = handleUnseen;
+
+  // Wild spawns on their own at random intervals while you're playing.
+  useEffect(() => {
+    if (screen !== GameScreen.PLAYING || paused || alienVisible || showSettings) return;
+    if (xrSession && xrFloor === 'scanning' && !MANUAL_PLACE) return; // still learning the floor
+    if (xrSession && MANUAL_PLACE) return; // hidden fallback: wait for the Place button
+    const first = !hadSpawnRef.current;
+    const ms = FAST ? 1500 : first ? 2500 + Math.random() * 2500 : 7000 + Math.random() * 13000;
+    const t = window.setTimeout(() => spawnWild(), ms);
+    return () => clearTimeout(t);
+  }, [screen, paused, alienVisible, showSettings, xrSession, xrFloor, spawnTick]);
 
   const startExploring = async () => {
     audioService.init();
     audioService.play('click');
     haptics.tap();
+    // iOS asks for motion access here (needs this tap).
     const granted = await requestMotionPermission();
     setMotionPermissionGranted(granted);
-    setPlaced(false);
-    setAnchor(null);
+    heading.start();
+    hadSpawnRef.current = false;
+    setHunt('none');
     setPaused(false);
     setScreen(GameScreen.PLAYING);
   };
@@ -339,6 +461,14 @@ export default function App() {
     startExploring();
   };
 
+  const resetWild = () => {
+    clearEncounterTimers();
+    setAlienVisible(false);
+    setHunt('none');
+    huntRef.current = 'none';
+    setRadar(null);
+  };
+
   const startXR = () => {
     const root = rootRef.current;
     if (!root) return;
@@ -351,29 +481,19 @@ export default function App() {
           setXrSession(null);
           setXrHasFloor(false);
           setXrAnchor(null);
-          setPlaced(false);
-          setAnchor(null);
+          setXrFloor('scanning');
+          resetWild();
         });
-        setPlaced(false);
-        setAnchor(null);
+        resetWild();
+        setXrFloor('scanning');
+        hadSpawnRef.current = false;
         setXrSession(session);
       })
       .catch(err => {
         console.error('Could not start AR:', err);
         setXrError('AR could not start on this device. Using the camera view instead.');
+        showToast({ title: 'AR unavailable', body: 'Using the camera view instead.' });
       });
-  };
-
-  const handlePlaceAlien = () => {
-    if (xrSession) {
-      // Anchor to the real floor point under the reticle.
-      if (!xrStageRef.current?.place()) return;
-    }
-    setAnchor({ ...liveOrientation });
-    setPlaced(true);
-    audioService.play('portal');
-    haptics.tap();
-    setTimeout(spawnAlienAtCrosshair, 800);
   };
 
   const conversationContext = (history: { role: string; content: string }[]) => ({
@@ -384,8 +504,9 @@ export default function App() {
   });
 
   const handleSayHi = async () => {
-    if (alienTimeoutRef.current) clearTimeout(alienTimeoutRef.current);
-    alienTimeoutRef.current = null;
+    clearEncounterTimers();
+    setHunt('none');
+    huntRef.current = 'none';
 
     setAlienStatus('NOTICED');
     audioService.play('success');
@@ -533,8 +654,8 @@ export default function App() {
     setConversationMessages([]);
     setConversationPhase('none');
     setScreen(GameScreen.PLAYING);
-    setPlaced(false);
-    setAnchor(null);
+    setHunt('none');
+    setRadar(null);
 
     const p = progressService.get();
     const v = variantRef.current;
@@ -552,9 +673,7 @@ export default function App() {
 
   /** Pause menu → back to the title screen. */
   const quitToTitle = async () => {
-    if (alienTimeoutRef.current) clearTimeout(alienTimeoutRef.current);
-    alienTimeoutRef.current = null;
-    remainingPeekRef.current = null;
+    clearEncounterTimers();
     if (phaseSafetyRef.current) clearTimeout(phaseSafetyRef.current);
     voiceService.stopSpeaking();
     voiceService.stopListening();
@@ -572,8 +691,8 @@ export default function App() {
     setAlienMessage(null);
     setConversationMessages([]);
     setConversationPhase('none');
-    setPlaced(false);
-    setAnchor(null);
+    setHunt('none');
+    setRadar(null);
     setScreen(GameScreen.MENU);
     refreshProgress();
   };
@@ -594,13 +713,29 @@ export default function App() {
     if (ok) showToast({ title: 'Installed.', body: 'Open it from your home screen.' });
   };
 
+  // The camera notice dismisses itself after a while.
+  useEffect(() => {
+    if (cameraStatus !== 'denied' && cameraStatus !== 'unavailable') return;
+    const t = window.setTimeout(() => setCameraNoticeDismissed(true), 9000);
+    return () => clearTimeout(t);
+  }, [cameraStatus]);
+
   // ---- Render ----
-  const alienLayerActive = (screen === GameScreen.PLAYING && placed) || inConversation;
+  const alienLayerActive = (screen === GameScreen.PLAYING && alienVisible) || inConversation;
+  const radarHint = xrSession
+    ? xrFloor === 'scanning'
+      ? 'Scanning surroundings…'
+      : null
+    : hunt === 'hunting'
+    ? hasSensor
+      ? 'Turn to look around'
+      : 'Drag to look around'
+    : null;
   const chatRect = xrSession ? computeXRChatRect(layout, xrAnchor) : layout.chat;
   const cameraWanted = settings.cameraEnabled && inGame && !xrSession;
   const cameraLive = cameraWanted && cameraStatus === 'active';
   const showCameraNotice =
-    screen === GameScreen.PLAYING && !alienVisible && !xrSession && settings.cameraEnabled && (cameraStatus === 'denied' || cameraStatus === 'unavailable') && !cameraNoticeDismissed;
+    screen === GameScreen.PLAYING && !xrSession && settings.cameraEnabled && (cameraStatus === 'denied' || cameraStatus === 'unavailable') && !cameraNoticeDismissed;
 
   return (
     <div
@@ -610,7 +745,7 @@ export default function App() {
       data-camera={cameraStatus}
     >
       {/* Star-room backdrop: menus, and gameplay when there's no camera. */}
-      {!xrSession && !cameraLive && <Backdrop variant={inGame ? 'room' : 'space'} />}
+      {!xrSession && !cameraLive && <Backdrop variant={inGame ? 'room' : 'space'} getHeading={inGame ? () => heading.value : undefined} />}
 
       {/* In WebXR the browser shows the camera itself; don't fight it for the camera. */}
       {!xrSession && <CameraFeed enabled={cameraWanted} onStatus={setCameraStatus} />}
@@ -624,10 +759,13 @@ export default function App() {
             isVisible={inConversation || alienVisible}
             status={alienStatus}
             scene={inConversation ? 'conversation' : 'peek'}
-            placed={placed}
+            placed={alienVisible || inConversation}
             onReticleChange={setXrHasFloor}
             onScreenAnchor={setXrAnchor}
             tint={variant.xrTint}
+            showReticle={MANUAL_PLACE}
+            onFloorChange={setXrFloor}
+            onRadar={handleXRRadar}
           />
         </Suspense>
       )}
@@ -675,11 +813,7 @@ export default function App() {
       )}
 
       {alienLayerActive && (
-        <div
-          style={{ opacity: screen === GameScreen.PLAYING && !xrSession ? arOpacity : 1, transition: 'opacity 0.15s linear' }}
-          data-testid="alien-layer"
-          data-variant={variant.id}
-        >
+        <div data-testid="alien-layer" data-variant={variant.id} data-hunt={hunt}>
           <Alien
             player={alienPlayer}
             isVisible={inConversation || alienVisible}
@@ -694,6 +828,8 @@ export default function App() {
             onWalkOutDone={finishConversation}
             variantFilter={variant.filter}
             variantClass={variant.className}
+            peekEdge={peekEdge}
+            peekReveal={xrSession ? 1 : peekReveal}
           />
         </div>
       )}
@@ -728,42 +864,74 @@ export default function App() {
 
       {screen === GameScreen.PLAYING && !paused && (
         <>
-          {!placed && (
-            <ARCalibration
-              onPlace={handlePlaceAlien}
-              motionSupported={motionSupported}
-              xrSupported={xrSupported}
-              xrActive={!!xrSession}
-              xrHasFloor={xrHasFloor}
-              xrError={xrError}
-              onStartXR={startXR}
+          {/* Look around by dragging (no motion sensor / desktop). Sits under all UI. */}
+          {!xrSession && (
+            <div
+              className="absolute inset-0 z-10"
+              style={{ touchAction: 'none', cursor: 'grab' }}
+              data-testid="pan-surface"
+              onPointerDown={e => {
+                (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+                dragRef.current = e.clientX;
+              }}
+              onPointerMove={e => {
+                if (dragRef.current == null) return;
+                const dx = e.clientX - dragRef.current;
+                dragRef.current = e.clientX;
+                heading.addDrag(-dx * DRAG_DEG_PER_PX); // swipe left to look right
+              }}
+              onPointerUp={() => (dragRef.current = null)}
+              onPointerCancel={() => (dragRef.current = null)}
             />
           )}
 
-          {placed && (
-            <>
-              {DEBUG && (
-                <div className="absolute top-20 left-4 z-50 bg-black/70 backdrop-blur-sm px-3 py-2 rounded-lg text-xs font-mono">
-                  <div className="text-cyan-400">State: PLAYING</div>
-                  <div>Alien: {alienVisible ? 'VISIBLE' : 'HIDDEN'} · {alienStatus}</div>
-                  <div>Variant: {variant.id}</div>
-                  <div>Mode: {xrSession ? 'WebXR floor' : cameraLive ? 'Camera fallback' : 'Star-room'}</div>
-                  <div>Motion: {motionPermissionGranted ? 'ON' : 'OFF'}</div>
-                  <div className="flex gap-2 mt-2">
-                    <button onClick={spawnAlienAtCrosshair} className="bg-cyan-600 px-2 py-1 rounded text-xs">
-                      Force Spawn
-                    </button>
-                    <button onClick={() => { setPlaced(false); setAnchor(null); }} className="bg-purple-600 px-2 py-1 rounded text-xs">
-                      Re-place
-                    </button>
-                  </div>
-                </div>
-              )}
+          <RadarHUD
+            active={hunt !== 'none' && alienStatus !== 'MISSED'}
+            delta={radar ? radar.delta : null}
+            spotted={hunt === 'spotted'}
+            hint={radarHint}
+          />
 
-              {alienVisible && alienStatus === 'IDLE' && (
-                <SayHiButton onSayHi={handleSayHi} deadline={spawnDeadline} />
-              )}
-            </>
+          {xrSupported && !xrSession && hunt === 'none' && (
+            <div className="absolute left-0 right-0 z-50 flex justify-center" style={{ bottom: 'calc(2rem + var(--sab))' }}>
+              <button
+                onClick={startXR}
+                data-testid="start-xr"
+                className="bg-black/55 backdrop-blur-sm border border-cyan-300/50 text-white font-semibold py-2.5 px-5 rounded-full flex items-center gap-2 text-sm"
+              >
+                <Scan className="w-4 h-4" /> Real-floor AR
+              </button>
+            </div>
+          )}
+
+          {/* Hidden fallback (?place=1): the old reticle + Place button in WebXR. */}
+          {xrSession && MANUAL_PLACE && !alienVisible && (
+            <ARCalibration
+              onPlace={() => spawnWild(true)}
+              motionSupported={motionSupported}
+              xrSupported={xrSupported}
+              xrActive
+              xrHasFloor={xrHasFloor}
+              xrError={xrError}
+            />
+          )}
+
+          {DEBUG && (
+            <div className="absolute top-28 left-4 z-50 bg-black/70 backdrop-blur-sm px-3 py-2 rounded-lg text-xs font-mono">
+              <div className="text-cyan-400">Hunt: {hunt}</div>
+              <div>Alien: {alienVisible ? 'VISIBLE' : 'HIDDEN'} · {alienStatus}</div>
+              <div>Variant: {variant.id}</div>
+              <div>Delta: {radar ? radar.delta.toFixed(0) : '-'}° · reveal {peekReveal.toFixed(2)}</div>
+              <div>Mode: {xrSession ? `WebXR (${xrFloor})` : cameraLive ? 'Camera' : 'Star-room'}</div>
+              <div>Motion: {motionPermissionGranted ? 'ON' : 'OFF'} · sensor {hasSensor ? 'yes' : 'no'}</div>
+              <button onClick={() => spawnWild()} className="mt-2 bg-cyan-600 px-2 py-1 rounded text-xs">
+                Force Spawn
+              </button>
+            </div>
+          )}
+
+          {alienVisible && alienStatus === 'IDLE' && hunt === 'spotted' && (
+            <SayHiButton onSayHi={handleSayHi} deadline={spawnDeadline} />
           )}
         </>
       )}

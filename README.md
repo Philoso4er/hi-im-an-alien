@@ -31,7 +31,9 @@ All stored in `localStorage` on the device, no backend.
 
 ## 🧪 Dev / test switches
 
-- `?debug=1` shows the old state panel with *Force Spawn* / *Re-place*.
+- `?debug=1` shows a state panel (hunt state, bearing, reveal) with *Force Spawn*.
+- `?fast=1` spawns wild encounters every ~1.5 s.
+- `?place=1` (WebXR only) brings back the manual reticle + Place button.
 - `?nocamera=1` forces the no-camera star-room.
 - `?variant=lunar` (or `verdant`, `ember`, `dawn`, `abyssal`, `prismatic`) forces a variant.
 
@@ -47,19 +49,23 @@ All stored in `localStorage` on the device, no backend.
 - **🧠 Alien Memory**: The alien vaguely remembers past conversations
 
 
-## 🌍 Grounded alien (AR vs camera fallback)
+## 🔭 Discovery (no placing, think Pokémon Go)
 
-- **Android Chrome (ARCore / WebXR):** tap **Start AR (real floor)**, point at the floor until a ring appears, then **Place Alien Here**. The alien GIF is drawn on a camera-facing plane standing on that real floor point, with a soft contact shadow, and an invisible "corner" beside it so it leans out from behind something. three.js is only downloaded on these devices.
-- **iPhone Safari / desktop:** the normal camera view is used. The alien stands on a fixed floor line near the bottom of the screen (with a contact shadow) and peeks in from the right edge of the screen.
-- **Conversation:** the alien walks in and stops on a "presenting" gesture (frame 88 of `walk-gesture.gif`); the chat panel appears where it points and the GIF stays frozen while you chat. When you close the chat it waves goodbye and walks off.
+You never place the alien. While the game is open it turns up on its own at random intervals (a wild encounter), somewhere **off to the side**, and you turn to find it.
+
+- **Radar / sonar HUD** (top centre): a blip shows its bearing relative to where you're looking; pings get faster, louder and higher as you face it, are panned left/right, and give light haptics when close. An edge glow + arrow shows which way to turn.
+- **Android Chrome (WebXR):** tap **Real-floor AR**. The floor is hit-tested silently in the background ("Scanning surroundings…"); the game then picks a real floor point **30–120° from your camera heading, 1.5–4 m away**, preferring points at the rim of the scanned floor (usually next to a wall, doorway or furniture). If no floor is found within ~12 s it uses an estimated floor ~1.35 m below the phone. The old reticle + *Place Alien Here* is kept only as a hidden fallback (`?place=1`).
+- **iPhone / desktop / no AR (camera or star-room):** the heading comes from DeviceOrientation (iOS asks for motion permission on the Begin tap) and/or dragging the screen (swipe left to look right; arrow keys on desktop). The alien waits just past the left or right screen edge (mirrored on the left) and leans in as you turn toward it, grounded on the fixed floor line with its contact shadow.
+- **Timing:** ~25 s to find it before it retreats unseen; the 5 s *Say hi* timer starts only once it is actually on screen. Next wild spawn 7–20 s later (`?fast=1` for 1.5 s while testing).
+- **Conversation:** unchanged: it walks in, stops on the presenting gesture (frame 88 of `walk-gesture.gif`), chat appears where it points; on close it waves and walks off.
 
 ## 🎮 How to Play
 
-1. **START EXPLORING** - Camera activates and you enter discovery mode
-2. **SPOT THE ALIEN** - Watch for aliens appearing at screen edges with portal effects
-3. **SAY HI!** - Tap the glowing button within 5 seconds before the alien vanishes
-4. **CONVERSE** - Chat via text or voice for up to 90 seconds
-5. **COLLECT MEMORIES** - Each encounter is saved to your collection
+1. **BEGIN** - camera (or star-room) opens and the radar starts listening
+2. **FOLLOW THE SIGNAL** - when the radar pings, turn your phone (or drag) toward the blip
+3. **SAY HI!** - once it leans into view you have 5 seconds
+4. **CONVERSE** - text or voice for up to 90 seconds
+5. **COLLECT** - every contact lands in your Sightings log; rare forms show up at certain hours
 
 ## 🤖 About the Alien
 

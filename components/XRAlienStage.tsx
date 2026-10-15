@@ -6,8 +6,24 @@ import { ALIEN_GIFS, ALIEN_HEIGHT_M } from './alienStage';
 import type { AlienScene } from './Alien';
 
 export interface XRStageHandle {
-  /** Anchor the alien where the floor reticle currently is. */
+  /** Manual fallback: anchor the alien where the floor reticle currently is. */
   place: () => boolean;
+  /**
+   * Discovery: the game picks a spot on the floor itself, off to the side of
+   * where the camera is looking (30-120 deg, 1.5-4 m away), preferring real
+   * hit-test points near the edge of the scanned floor. Returns false if no
+   * camera pose yet.
+   */
+  spawn: () => boolean;
+}
+
+export interface XRRadarInfo {
+  /** Bearing of the alien relative to the camera's forward direction, deg, + = right. */
+  delta: number;
+  /** Alien's chest is inside the screen. */
+  onScreen: boolean;
+  /** Horizontal distance in metres. */
+  distance: number;
 }
 
 export interface XRScreenAnchor {
@@ -33,6 +49,12 @@ interface XRAlienStageProps {
   onScreenAnchor?: (anchor: XRScreenAnchor | null) => void;
   /** Colour multiplier for rare sighting variants (hex, default white = untinted). */
   tint?: number;
+  /** Show the floor reticle (manual placement fallback only). Default false. */
+  showReticle?: boolean;
+  /** A real floor has been detected (hit-test), or estimated after a timeout. */
+  onFloorChange?: (state: 'scanning' | 'found' | 'estimated') => void;
+  /** ~10 Hz: where the alien is relative to the camera. */
+  onRadar?: (info: XRRadarInfo | null) => void;
 }
 
 /** Radial-gradient texture for the contact shadow. */
@@ -86,12 +108,13 @@ function planeConfig(kind: 'peek' | 'walk') {
  * so the alien leans out from — and walks in from behind — something.
  */
 const XRAlienStage = forwardRef<XRStageHandle, XRAlienStageProps>(
-  ({ session, player, isVisible, status, scene, placed: placedProp, onReticleChange, onScreenAnchor, tint }, ref) => {
-    const live = useRef({ isVisible, status, scene, placedProp, onReticleChange, onScreenAnchor, tint });
-    live.current = { isVisible, status, scene, placedProp, onReticleChange, onScreenAnchor, tint };
-    const api = useRef<XRStageHandle>({ place: () => false });
+  (props, ref) => {
+    const { session, player } = props;
+    const live = useRef(props);
+    live.current = props;
+    const api = useRef<XRStageHandle>({ place: () => false, spawn: () => false });
 
-    useImperativeHandle(ref, () => ({ place: () => api.current.place() }), []);
+    useImperativeHandle(ref, () => ({ place: () => api.current.place(), spawn: () => api.current.spawn() }), []);
 
     useEffect(() => {
       let disposed = false;
@@ -201,6 +224,83 @@ const XRAlienStage = forwardRef<XRStageHandle, XRAlienStageProps>(
       let placed = false;
       let pendingPlace = false;
       let hadHit = false;
+      // ---- Floor knowledge, gathered silently while the player looks around ----
+      const floorSamples: THREE.Vector3[] = [];
+      const floorYs: number[] = [];
+      let floorY: number | null = null;
+      let floorState: 'scanning' | 'found' | 'estimated' = 'scanning';
+      const startedAt = performance.now();
+      const setFloorState = (s: typeof floorState) => {
+        if (floorState === s) return;
+        floorState = s;
+        live.current.onFloorChange?.(s);
+      };
+      const addFloorSample = (p: THREE.Vector3) => {
+        floorYs.push(p.y);
+        if (floorYs.length > 60) floorYs.shift();
+        const sorted = [...floorYs].sort((a, b) => a - b);
+        floorY = sorted[Math.floor(sorted.length / 2)];
+        // Only keep points that are actually on the floor and spread out.
+        if (Math.abs(p.y - floorY) > 0.12) return;
+        if (floorSamples.some(q => q.distanceToSquared(p) < 0.09)) return;
+        floorSamples.push(p.clone());
+        if (floorSamples.length > 300) floorSamples.shift();
+        if (floorSamples.length >= 3) setFloorState('found');
+      };
+      const camFwd = new THREE.Vector3();
+      const camRight = new THREE.Vector3();
+      const viewerPos = new THREE.Vector3();
+      const viewerQuat = new THREE.Quaternion();
+      let haveViewer = false;
+      const horizontalBasis = () => {
+        camFwd.set(0, 0, -1).applyQuaternion(viewerQuat);
+        camFwd.y = 0;
+        if (camFwd.lengthSq() < 1e-4) camFwd.set(0, 0, -1);
+        camFwd.normalize();
+        camRight.set(-camFwd.z, 0, camFwd.x); // 90 deg clockwise seen from above
+      };
+      const bearingOf = (p: THREE.Vector3) => {
+        const vx = p.x - viewerPos.x;
+        const vz = p.z - viewerPos.z;
+        const f = vx * camFwd.x + vz * camFwd.z;
+        const r = vx * camRight.x + vz * camRight.z;
+        return { delta: (Math.atan2(r, f) * 180) / Math.PI, distance: Math.hypot(vx, vz) };
+      };
+
+      api.current.spawn = () => {
+        if (!haveViewer) return false;
+        horizontalBasis();
+        const y = floorY ?? viewerPos.y - 1.35; // no floor yet: assume phone held ~1.35 m up
+        // Candidates from real floor points first.
+        const candidates = floorSamples.filter(q => {
+          const b = bearingOf(q);
+          return Math.abs(b.delta) >= 30 && Math.abs(b.delta) <= 120 && b.distance >= 1.5 && b.distance <= 4;
+        });
+        let target: THREE.Vector3;
+        if (candidates.length) {
+          // Prefer points at the rim of what we've scanned: usually next to a wall,
+          // furniture or doorway, which is where something would lurk.
+          const c = floorSamples.reduce((acc, q) => acc.add(q), new THREE.Vector3()).multiplyScalar(1 / floorSamples.length);
+          candidates.sort((a, b) => b.distanceToSquared(c) - a.distanceToSquared(c));
+          const top = candidates.slice(0, Math.max(1, Math.ceil(candidates.length * 0.3)));
+          target = top[Math.floor(Math.random() * top.length)].clone();
+        } else {
+          const side = Math.random() < 0.5 ? -1 : 1;
+          const ang = ((30 + Math.random() * 90) * side * Math.PI) / 180;
+          const dist = 1.5 + Math.random() * 2.5;
+          // rotate forward by ang (clockwise = toward right)
+          const dx = camFwd.x * Math.cos(ang) + camRight.x * Math.sin(ang);
+          const dz = camFwd.z * Math.cos(ang) + camRight.z * Math.sin(ang);
+          target = new THREE.Vector3(viewerPos.x + dx * dist, y, viewerPos.z + dz * dist);
+        }
+        target.y = y;
+        anchor.position.copy(target);
+        placed = true;
+        pendingPlace = true;
+        reticle.visible = false;
+        return true;
+      };
+
       api.current.place = () => {
         if (!reticle.visible) return false;
         const p = new THREE.Vector3();
@@ -240,20 +340,26 @@ const XRAlienStage = forwardRef<XRStageHandle, XRAlienStageProps>(
 
         player.tick(now);
 
-        if (st.placedProp) pendingPlace = false;
+        if (st.placed) pendingPlace = false;
         else if (!pendingPlace) placed = false;
 
-        // Floor hit-test → reticle (until placed).
-        if (hitSource && refSpace && !placed) {
+        // Floor hit-test runs silently in the background: it teaches us where the
+        // floor is. The reticle is only drawn in the manual-placement fallback.
+        if (hitSource && refSpace) {
           const hits = frame.getHitTestResults(hitSource);
           const pose = hits.length ? hits[0].getPose(refSpace) : undefined;
-          reticle.visible = !!pose;
+          if (pose) {
+            const t = pose.transform.position;
+            addFloorSample(new THREE.Vector3(t.x, t.y, t.z));
+          }
+          reticle.visible = !!pose && !!st.showReticle && !placed;
           if (pose) reticle.matrix.fromArray(pose.transform.matrix);
           if (!!pose !== hadHit) {
             hadHit = !!pose;
             st.onReticleChange?.(hadHit);
           }
         }
+        if (floorState === 'scanning' && now - startedAt > 12000) setFloorState('estimated');
 
         applyConfig(st.scene === 'peek' ? 'peek' : 'walk');
         anchor.visible = placed && st.isVisible;
@@ -263,6 +369,10 @@ const XRAlienStage = forwardRef<XRStageHandle, XRAlienStageProps>(
         if (viewer) {
           const p = viewer.transform.position;
           camPos.set(p.x, p.y, p.z);
+          viewerPos.copy(camPos);
+          const o = viewer.transform.orientation;
+          viewerQuat.set(o.x, o.y, o.z, o.w);
+          haveViewer = true;
           billboard.rotation.y = Math.atan2(camPos.x - anchor.position.x, camPos.z - anchor.position.z);
         }
 
@@ -274,9 +384,27 @@ const XRAlienStage = forwardRef<XRStageHandle, XRAlienStageProps>(
         syncTexture();
         renderer.render(scene3, camera);
 
-        // Tell the DOM overlay where the alien is on screen (chat panel / bubble placement).
-        if (st.onScreenAnchor && now - lastAnchorReport > 120) {
+        // Tell the DOM overlay where the alien is on screen (chat panel / bubble placement)
+        // and where it is relative to the camera (radar).
+        const reportNow = now - lastAnchorReport > 100;
+        if (reportNow) {
           lastAnchorReport = now;
+          const xrCam = renderer.xr.getCamera() as THREE.ArrayCamera;
+          const cam0 = (xrCam.cameras && xrCam.cameras[0]) || xrCam;
+          if (st.onRadar) {
+            if (anchor.visible && haveViewer) {
+              horizontalBasis();
+              const b = bearingOf(anchor.position);
+              const chestP = project(new THREE.Vector3(anchor.position.x, anchor.position.y + ALIEN_HEIGHT_M * 0.55, anchor.position.z), cam0);
+              const onScreen =
+                !chestP.behind && chestP.x > 0 && chestP.x < window.innerWidth && chestP.y > 0 && chestP.y < window.innerHeight;
+              st.onRadar({ delta: b.delta, onScreen, distance: b.distance });
+            } else {
+              st.onRadar(null);
+            }
+          }
+        }
+        if (st.onScreenAnchor && reportNow) {
           const xrCam = renderer.xr.getCamera() as THREE.ArrayCamera;
           const cam0 = (xrCam.cameras && xrCam.cameras[0]) || xrCam;
           if (anchor.visible) {
@@ -321,6 +449,7 @@ const XRAlienStage = forwardRef<XRStageHandle, XRAlienStageProps>(
         shadowTex.dispose();
         renderer.dispose();
         api.current.place = () => false;
+        api.current.spawn = () => false;
       };
     }, [session, player]);
 

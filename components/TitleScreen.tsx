@@ -85,7 +85,7 @@ const TitleScreen: React.FC<TitleScreenProps> = ({
             animate={{ opacity: 1 }}
             transition={{ delay: 0.4 }}
           >
-            Something keeps peeking into your camera. Say hi before it slips away.
+            Something is out there, just out of view. Follow the signal, find it, say hi before it slips away.
           </motion.p>
 
           {returning && (

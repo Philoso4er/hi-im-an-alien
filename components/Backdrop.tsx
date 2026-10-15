@@ -4,6 +4,8 @@ interface BackdropProps {
   /** 'space' for menus, 'room' for gameplay without a camera (adds a floor + doorway). */
   variant?: 'space' | 'room';
   dim?: boolean;
+  /** Player heading in degrees: the sky and floor grid pan as you look around. */
+  getHeading?: () => number;
 }
 
 /**
@@ -11,8 +13,10 @@ interface BackdropProps {
  * a doorway edge on the right for the alien to peek around. Used for menus and
  * as the camera-denied / no-camera play space.
  */
-const Backdrop: React.FC<BackdropProps> = ({ variant = 'space', dim }) => {
+const Backdrop: React.FC<BackdropProps> = ({ variant = 'space', dim, getHeading }) => {
   const ref = useRef<HTMLCanvasElement>(null);
+  const headingRef = useRef(getHeading);
+  headingRef.current = getHeading;
 
   useEffect(() => {
     const canvas = ref.current;
@@ -62,12 +66,15 @@ const Backdrop: React.FC<BackdropProps> = ({ variant = 'space', dim }) => {
       ctx.fillRect(0, 0, w, h);
 
       const horizon = variant === 'room' ? h * 0.58 : h;
+      // ~60 degrees of view across the screen width.
+      const pan = (headingRef.current?.() ?? 0) * (w / 60);
       for (const s of stars) {
         if (s.y > horizon) continue;
         const a = s.a * (0.65 + 0.35 * Math.sin(s.tw + t * 0.0015));
         ctx.fillStyle = `rgba(210, 235, 255, ${a})`;
+        const sx = (((s.x - pan * 0.6) % w) + w) % w;
         ctx.beginPath();
-        ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+        ctx.arc(sx, s.y, s.r, 0, Math.PI * 2);
         ctx.fill();
         if (!reduce) {
           s.x -= s.v;
@@ -88,10 +95,12 @@ const Backdrop: React.FC<BackdropProps> = ({ variant = 'space', dim }) => {
         ctx.strokeStyle = 'rgba(34, 211, 238, 0.10)';
         ctx.lineWidth = 1;
         const vx = w * 0.45;
-        for (let i = -8; i <= 8; i++) {
+        const spacing = w * 0.22;
+        const shift = ((pan % spacing) + spacing) % spacing;
+        for (let i = -9; i <= 9; i++) {
           ctx.beginPath();
-          ctx.moveTo(vx, horizon);
-          ctx.lineTo(vx + i * w * 0.22, h);
+          ctx.moveTo(vx - shift * 0.15 + i * spacing * 0.15, horizon);
+          ctx.lineTo(vx + i * spacing - shift, h);
           ctx.stroke();
         }
         for (let i = 1; i < 9; i++) {
@@ -112,6 +121,12 @@ const Backdrop: React.FC<BackdropProps> = ({ variant = 'space', dim }) => {
         wall.addColorStop(1, 'rgba(2, 2, 6, 1)');
         ctx.fillStyle = wall;
         ctx.fillRect(w - doorW, h * 0.12, doorW, h);
+        const wallL = ctx.createLinearGradient(doorW, 0, 0, 0);
+        wallL.addColorStop(0, 'rgba(4, 5, 12, 0.0)');
+        wallL.addColorStop(0.35, 'rgba(4, 5, 12, 0.9)');
+        wallL.addColorStop(1, 'rgba(2, 2, 6, 1)');
+        ctx.fillStyle = wallL;
+        ctx.fillRect(0, h * 0.12, doorW, h);
         // Light spill from behind the door
         const spill = ctx.createRadialGradient(w, horizon + (h - horizon) * 0.5, 0, w, horizon + (h - horizon) * 0.5, w * 0.6);
         spill.addColorStop(0, 'rgba(34, 211, 238, 0.10)');

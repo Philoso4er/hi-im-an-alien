@@ -23,6 +23,10 @@ interface AlienProps {
   /** Rare-variant look (CSS filter / class) applied to the alien only, not its shadow. */
   variantFilter?: string;
   variantClass?: string;
+  /** Which screen edge it peeks around (left = mirrored GIF). */
+  peekEdge?: 'left' | 'right';
+  /** 0 = fully behind the edge, 1 = fully leaning out. Driven by where you look. */
+  peekReveal?: number;
 }
 
 const WALK_IN = { speed: 1.7, maxDelay: 120 };
@@ -166,6 +170,9 @@ const Alien: React.FC<AlienProps> = props => {
   const { player, isVisible, status, scene, layout, renderTarget, message, xrBubbleAnchor, variantFilter, variantClass } =
     props;
   const look = { style: variantFilter ? { filter: variantFilter } : undefined, className: variantClass };
+  const peekEdge = props.peekEdge || 'right';
+  const reveal = status === 'MISSED' ? 0 : Math.max(0, Math.min(1, props.peekReveal ?? 1));
+  const hiddenX = (peekEdge === 'left' ? -1 : 1) * layout.peek.hiddenShift;
   useAlienPlayback(props);
 
   const peek = layout.peek;
@@ -196,21 +203,25 @@ const Alien: React.FC<AlienProps> = props => {
         <AnimatePresence>
           {isVisible && scene === 'peek' && (
             <motion.div
-              key="peek"
+              key={`peek-${peekEdge}`}
               className="absolute"
+              data-testid="alien-peek"
+              data-reveal={reveal.toFixed(2)}
               style={{
-                left: peek.canvas.left,
+                left: peekEdge === 'left' ? 0 : peek.canvas.left,
                 top: peek.canvas.top,
                 width: peek.canvas.width,
                 height: peek.canvas.height
               }}
-              initial={{ x: peek.hiddenShift }}
-              animate={{ x: status === 'MISSED' ? peek.hiddenShift : 0 }}
-              exit={{ x: peek.hiddenShift, transition: { duration: 0.35 } }}
-              transition={{ type: 'spring', damping: 24, stiffness: 140 }}
+              initial={{ x: hiddenX }}
+              animate={{ x: hiddenX * (1 - reveal) }}
+              exit={{ x: hiddenX, transition: { duration: 0.35 } }}
+              transition={{ type: 'spring', damping: 26, stiffness: 170 }}
             >
-              <ContactShadow player={player} floorFrac={ALIEN_GIFS.peek.floorFrac} minWidthPct={52} />
-              <CanvasHost player={player} {...look} />
+              <div className="absolute inset-0" style={peekEdge === 'left' ? { transform: 'scaleX(-1)' } : undefined}>
+                <ContactShadow player={player} floorFrac={ALIEN_GIFS.peek.floorFrac} minWidthPct={52} />
+                <CanvasHost player={player} {...look} />
+              </div>
             </motion.div>
           )}
 

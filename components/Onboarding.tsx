@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Camera, CameraOff, ChevronLeft, Eye, Hand, MessageCircle } from 'lucide-react';
+import { Camera, CameraOff, ChevronLeft, Eye, MessageCircle, Radar } from 'lucide-react';
 
 interface OnboardingProps {
   /** Finished: whether the player wants to use the camera. */
@@ -10,14 +10,14 @@ interface OnboardingProps {
 
 const STEPS = [
   {
-    icon: Eye,
-    title: 'Watch the edges',
-    body: 'Something shows up at the side of the screen. It leans out from behind a doorway, a wall, the edge of the world.'
+    icon: Radar,
+    title: 'It finds you',
+    body: 'While the game is open, something turns up on its own, somewhere off to the side. The radar at the top pings faster as you face it.'
   },
   {
-    icon: Hand,
-    title: 'Say hi in 5 seconds',
-    body: 'Tap Say Hi before it loses its nerve. Miss it and it slips away. It will come back. Probably.'
+    icon: Eye,
+    title: 'Turn to find it',
+    body: 'Turn your phone (or drag the screen) toward the signal. Once it leans into view you have 5 seconds to say hi before it loses its nerve.'
   },
   {
     icon: MessageCircle,
