@@ -67,7 +67,13 @@ const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(mi
 /** Height reserved at the bottom of the screen for the "Say Hi" button block. */
 const SAY_HI_RESERVE = 172;
 
-export function computeStageLayout(vw: number, vh: number, keyboardVh?: number): StageLayout {
+export function computeStageLayout(
+  vw: number,
+  vh: number,
+  keyboardVh?: number,
+  /** Safe-area insets (notch / home indicator) in px. */
+  insets: { top: number; bottom: number } = { top: 0, bottom: 0 }
+): StageLayout {
   // ---- Peek (Idle / Noticed): standing on the floor, peeking in from the right edge.
   // Its feet are higher up the screen than in the conversation (above the Say Hi
   // button), so it's drawn a bit smaller — i.e. a little further away — and
@@ -76,7 +82,7 @@ export function computeStageLayout(vw: number, vh: number, keyboardVh?: number):
   const peekAlienH = clamp(Math.min(vh * 0.3, vw * 0.8), 170, 320);
   const peekH = peekAlienH / (peekMeta.floorFrac - peekMeta.topFrac);
   const peekW = (peekH * peekMeta.width) / peekMeta.height;
-  const peekFloor = vh - SAY_HI_RESERVE;
+  const peekFloor = vh - SAY_HI_RESERVE - insets.bottom;
   const peekCanvas: Rect = {
     left: vw - peekW,
     top: peekFloor - peekMeta.floorFrac * peekH,
@@ -89,7 +95,7 @@ export function computeStageLayout(vw: number, vh: number, keyboardVh?: number):
   // ---- Conversation: alien stands bottom-right, presents the chat panel to its side.
   const w = ALIEN_GIFS.walk;
   const margin = vw < 500 ? 12 : 24;
-  const walkFloor = vh - (vw < 500 ? 22 : 32);
+  const walkFloor = vh - (vw < 500 ? 22 : 32) - insets.bottom;
   const walkAlienH = clamp(Math.min(vh * 0.33, vw * 0.75), 170, 340);
   const S = walkAlienH / (w.floorFrac - w.topFrac);
   const alienSideW = (w.bodyRightFrac - w.headLeftFrac) * S;
@@ -110,7 +116,7 @@ export function computeStageLayout(vw: number, vh: number, keyboardVh?: number):
 
   // Panel rests just above the upturned palms, so the alien looks like it's presenting it.
   let chatBottom = walkTop + w.palmFrac * S;
-  const topSafe = 16;
+  const topSafe = 16 + insets.top;
   let chatTop = Math.max(topSafe, chatBottom - 560);
   if (keyboardVh && keyboardVh < vh - 120) {
     // On-screen keyboard open: keep the input above it.
@@ -158,11 +164,25 @@ export function computeXRChatRect(
   return { left, top, width, height: bottom - top };
 }
 
+/** Reads env(safe-area-inset-*) in px via a hidden probe element. */
+function readSafeInsets() {
+  if (typeof document === 'undefined' || !document.body) return { top: 0, bottom: 0 };
+  const probe = document.createElement('div');
+  probe.style.cssText =
+    'position:fixed;visibility:hidden;pointer-events:none;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);';
+  document.body.appendChild(probe);
+  const cs = getComputedStyle(probe);
+  const out = { top: parseFloat(cs.paddingTop) || 0, bottom: parseFloat(cs.paddingBottom) || 0 };
+  probe.remove();
+  return out;
+}
+
 export function useViewport() {
   const read = () => ({
     vw: window.innerWidth,
     vh: window.innerHeight,
-    visualH: window.visualViewport ? window.visualViewport.height : window.innerHeight
+    visualH: window.visualViewport ? window.visualViewport.height : window.innerHeight,
+    insets: readSafeInsets()
   });
   const [vp, setVp] = useState(read);
   useEffect(() => {

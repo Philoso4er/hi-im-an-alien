@@ -40,7 +40,8 @@ const ARCalibration: React.FC<ARCalibrationProps> = ({
   }
 
   return (
-    <div className="absolute inset-0 z-40 flex flex-col items-center justify-between py-16 px-6 pointer-events-none">
+    <div className="absolute inset-0 z-40 flex flex-col items-center justify-between px-6 pointer-events-none"
+      style={{ paddingTop: 'calc(4.5rem + var(--sat))', paddingBottom: 'calc(3rem + var(--sab))' }}>
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -85,6 +86,7 @@ const ARCalibration: React.FC<ARCalibrationProps> = ({
           animate={{ opacity: canPlace ? 1 : 0.5, scale: 1 }}
           whileTap={{ scale: 0.95 }}
           onClick={canPlace ? onPlace : undefined}
+          data-testid="place-alien"
           disabled={!canPlace}
           className="pointer-events-auto bg-gradient-to-r from-cyan-500 to-purple-500 text-white font-bold py-4 px-8 rounded-full shadow-[0_0_40px_rgba(6,182,212,0.6)] flex items-center gap-2 uppercase tracking-wide"
         >
