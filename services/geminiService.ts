@@ -1,6 +1,8 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-const API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
+// A VITE_* key is compiled into the public JS bundle, so it is only honoured in
+// local dev. Production uses the server proxy (api/alien.ts) or the scripted fallback.
+const API_KEY = import.meta.env.DEV ? import.meta.env.VITE_GEMINI_API_KEY || '' : '';
 
 let genAI: GoogleGenerativeAI | null = null;
 
@@ -158,7 +160,7 @@ export async function getAlienResponse(
 
   try {
     const model = genAI.getGenerativeModel({ 
-      model: 'gemini-2.0-flash',
+      model: 'gemini-flash-latest',
       generationConfig: {
         temperature: 0.95, // Higher for more creative, mysterious responses
         maxOutputTokens: 120,

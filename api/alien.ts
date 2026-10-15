@@ -6,7 +6,7 @@
  * scripted fallback. The key only ever lives in Vercel's environment, never
  * in the client bundle or the repo.
  */
-const MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+const MODEL = process.env.GEMINI_MODEL || 'gemini-flash-latest';
 const MAX_TEXT = 600;
 
 const json = (body: unknown, status = 200) =>
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: system }] },
           contents,
-          generationConfig: { temperature: 0.95, topP: 0.95, maxOutputTokens: 160 }
+          generationConfig: { temperature: 0.95, topP: 0.95, maxOutputTokens: 512 }
         })
       }
     );

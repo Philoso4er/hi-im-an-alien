@@ -218,7 +218,7 @@ vercel deploy          # preview
 vercel deploy --prod   # production -> hi-im-an-alien.vercel.app
 ```
 
-**AI is optional.** With no key the alien uses the scripted free fallback (default). To use Gemini, set `GEMINI_API_KEY` (and optionally `GEMINI_MODEL`, default `gemini-2.0-flash`) in the Vercel project's environment variables. `api/alien.ts` is a serverless proxy, so the key stays server-side and never reaches the client bundle. `VITE_GEMINI_API_KEY` still works for local experiments, but it is embedded in the bundle, so don't use it for public deploys. Never commit keys.
+**AI is optional.** With no key the alien uses the scripted free fallback (default). To use Gemini, set `GEMINI_API_KEY` (and optionally `GEMINI_MODEL`, default `gemini-flash-latest`) in the Vercel project's environment variables. `api/alien.ts` is a serverless proxy, so the key stays server-side and never reaches the client bundle. `VITE_GEMINI_API_KEY` is only read in `npm run dev` (Vite would otherwise compile it into the public bundle); production builds ignore it. Never commit keys.
 
 ### Deploy to Netlify
 1. Drag `dist/` folder to Netlify
