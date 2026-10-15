@@ -31,6 +31,8 @@ interface XRAlienStageProps {
   placed: boolean;
   onReticleChange?: (hasFloor: boolean) => void;
   onScreenAnchor?: (anchor: XRScreenAnchor | null) => void;
+  /** Colour multiplier for rare sighting variants (hex, default white = untinted). */
+  tint?: number;
 }
 
 /** Radial-gradient texture for the contact shadow. */
@@ -84,9 +86,9 @@ function planeConfig(kind: 'peek' | 'walk') {
  * so the alien leans out from — and walks in from behind — something.
  */
 const XRAlienStage = forwardRef<XRStageHandle, XRAlienStageProps>(
-  ({ session, player, isVisible, status, scene, placed: placedProp, onReticleChange, onScreenAnchor }, ref) => {
-    const live = useRef({ isVisible, status, scene, placedProp, onReticleChange, onScreenAnchor });
-    live.current = { isVisible, status, scene, placedProp, onReticleChange, onScreenAnchor };
+  ({ session, player, isVisible, status, scene, placed: placedProp, onReticleChange, onScreenAnchor, tint }, ref) => {
+    const live = useRef({ isVisible, status, scene, placedProp, onReticleChange, onScreenAnchor, tint });
+    live.current = { isVisible, status, scene, placedProp, onReticleChange, onScreenAnchor, tint };
     const api = useRef<XRStageHandle>({ place: () => false });
 
     useImperativeHandle(ref, () => ({ place: () => api.current.place() }), []);
@@ -168,6 +170,8 @@ const XRAlienStage = forwardRef<XRStageHandle, XRAlienStageProps>(
       let lastFrameVersion = -1;
       let lastSourceVersion = player.sourceVersion;
       const syncTexture = () => {
+        const tintHex = live.current.tint ?? 0xffffff;
+        if (alienMat.color.getHex() !== tintHex) alienMat.color.setHex(tintHex);
         if (player.sourceVersion !== lastSourceVersion) {
           // Canvas size may have changed — WebGL textures can't be resized in place.
           lastSourceVersion = player.sourceVersion;

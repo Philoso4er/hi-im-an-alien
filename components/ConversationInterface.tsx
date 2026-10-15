@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Send, Mic, MicOff, X } from 'lucide-react';
+import { Send, Mic, MicOff, Pause, X } from 'lucide-react';
 import { ConversationMessage } from '../types';
 import { Rect } from './alienStage';
 
@@ -16,6 +16,7 @@ interface ConversationInterfaceProps {
   onStartVoice: () => void;
   onStopVoice: () => void;
   onEndConversation: () => void;
+  onPause?: () => void;
 }
 
 /**
@@ -32,7 +33,8 @@ const ConversationInterface: React.FC<ConversationInterfaceProps> = ({
   onSendMessage,
   onStartVoice,
   onStopVoice,
-  onEndConversation
+  onEndConversation,
+  onPause
 }) => {
   const [inputText, setInputText] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -57,6 +59,7 @@ const ConversationInterface: React.FC<ConversationInterfaceProps> = ({
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.2, transition: { duration: 0.25 } }}
       transition={{ type: 'spring', damping: 20, stiffness: 220 }}
+      data-testid="chat-panel"
       className="absolute z-50 flex flex-col bg-black/60 backdrop-blur-md border border-cyan-400/40 rounded-2xl shadow-[0_0_30px_rgba(6,182,212,0.25)] overflow-hidden"
       style={{
         left: rect.left,
@@ -82,8 +85,19 @@ const ConversationInterface: React.FC<ConversationInterfaceProps> = ({
           >
             {timeLeft}s
           </div>
+          {onPause && (
+            <button
+              onClick={onPause}
+              aria-label="Pause"
+              data-testid="chat-pause"
+              className="p-1.5 hover:bg-white/10 rounded-full transition-colors"
+            >
+              <Pause className="w-4 h-4 text-white" />
+            </button>
+          )}
           <button
             onClick={onEndConversation}
+            data-testid="end-conversation"
             aria-label="End conversation"
             className="p-1.5 hover:bg-white/10 rounded-full transition-colors"
           >
@@ -139,6 +153,8 @@ const ConversationInterface: React.FC<ConversationInterfaceProps> = ({
             value={inputText}
             onChange={e => setInputText(e.target.value)}
             placeholder="Say something..."
+            data-testid="chat-input"
+            enterKeyHint="send"
             className="flex-1 min-w-0 bg-white/10 border border-cyan-500/30 rounded-xl px-3 py-2 text-sm text-white placeholder-gray-400 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
           />
 

@@ -8,6 +8,52 @@ if (API_KEY) {
   genAI = new GoogleGenerativeAI(API_KEY);
 }
 
+/**
+ * Where replies come from, in order:
+ *  1. Optional server proxy (/api/alien) if GEMINI_API_KEY is set on Vercel.
+ *  2. Optional client key VITE_GEMINI_API_KEY (dev only: it ends up in the bundle).
+ *  3. Scripted fallback (default, free, works offline).
+ */
+let serverAI: Promise<boolean> | null = null;
+function serverAIEnabled(): Promise<boolean> {
+  if (!serverAI) {
+    serverAI =
+      typeof navigator !== 'undefined' && navigator.onLine === false
+        ? Promise.resolve(false)
+        : fetch('/api/alien', { method: 'GET' })
+            .then(r => (r.ok ? r.json() : { enabled: false }))
+            .then(j => !!j?.enabled)
+            .catch(() => false);
+  }
+  return serverAI;
+}
+
+async function askServer(system: string, message: string, history: { role: string; content: string }[]) {
+  if (!(await serverAIEnabled())) return null;
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 8000);
+    const r = await fetch('/api/alien', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ system, message, history: history.slice(-6) }),
+      signal: ctrl.signal
+    });
+    clearTimeout(t);
+    if (!r.ok) return null;
+    const j = await r.json();
+    return typeof j?.text === 'string' && j.text.trim() ? (j.text.trim() as string) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function getAIMode(): Promise<string> {
+  if (await serverAIEnabled()) return 'Gemini (server)';
+  if (genAI) return 'Gemini (client key)';
+  return 'scripted, free, works offline';
+}
+
 interface ConversationContext {
   encounterCount: number;
   previousTopics: string[];
@@ -99,13 +145,20 @@ export async function getAlienResponse(
   userMessage: string,
   context: ConversationContext
 ): Promise<string> {
+  const serverReply = await askServer(
+    getAlienPersonality(context),
+    `Human says: "${userMessage}"\n\nRespond as the mysterious alien (2-3 sentences, end with profound question):`,
+    context.messageHistory
+  );
+  if (serverReply) return serverReply;
+
   if (!genAI) {
     return getDeepFallbackResponse(userMessage, context);
   }
 
   try {
     const model = genAI.getGenerativeModel({ 
-      model: 'gemini-pro',
+      model: 'gemini-2.0-flash',
       generationConfig: {
         temperature: 0.95, // Higher for more creative, mysterious responses
         maxOutputTokens: 120,
@@ -421,6 +474,24 @@ export async function getAlienGreeting(context: ConversationContext): Promise<st
     return pickFromPool(firstGreetings, `first-${timeOfDay}`, messageIndex + encounterCount);
   }
   
+  // Hazy memory of what the human talked about before.
+  const topics = (context.previousTopics || []).filter(Boolean);
+  if (topics.length) {
+    const seed = `${encounterCount}-${topics.join(',')}`;
+    let h = 0;
+    for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+    if (h % 10 < 6) {
+      const topic = topics[h % topics.length];
+      const memoryGreetings = [
+        `You again... last cycle you spoke of "${topic}". The word is still warm in my hands. Has it changed shape since?`,
+        `I kept something of yours... "${topic}". I turn it over in the dark sometimes. Did you think I would forget?`,
+        `The one who mentioned "${topic}"... yes. I remember the frequency, not the face. Why does that word follow you?`,
+        `Something about "${topic}"... it echoed after you left. I could not tell if it was a question or a confession. Which was it?`
+      ];
+      return memoryGreetings[h % memoryGreetings.length];
+    }
+  }
+
   const timeGreetings = {
     morning: "You return as light breaks the darkness... I wondered if you'd feel the pull again. Our last encounter ripples through time still. Do you remember what I showed you?",
     afternoon: "Under the burning star, we meet again... Your consciousness called to me across the void. Has time felt strange since we last spoke?",

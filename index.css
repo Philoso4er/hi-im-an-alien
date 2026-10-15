@@ -1,0 +1,71 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: #000;
+}
+
+body {
+  overscroll-behavior: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+input,
+textarea {
+  -webkit-user-select: text;
+  user-select: text;
+  /* >=16px stops iOS Safari zooming into the field. */
+  font-size: 16px;
+}
+
+.safe-top { padding-top: max(1rem, var(--sat)); }
+.safe-bottom { padding-bottom: max(1rem, var(--sab)); }
+.safe-x { padding-left: max(1rem, var(--sal)); padding-right: max(1rem, var(--sar)); }
+.safe-inset {
+  padding-top: max(1rem, var(--sat));
+  padding-bottom: max(1rem, var(--sab));
+  padding-left: max(1rem, var(--sal));
+  padding-right: max(1rem, var(--sar));
+}
+
+.font-signal { font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace; letter-spacing: 0.08em; }
+
+@keyframes prismatic {
+  0% { filter: hue-rotate(0deg) drop-shadow(0 0 14px rgba(255, 255, 255, 0.55)); }
+  100% { filter: hue-rotate(360deg) drop-shadow(0 0 14px rgba(255, 255, 255, 0.55)); }
+}
+.variant-prismatic { animation: prismatic 4s linear infinite; }
+
+@keyframes flicker {
+  0%, 100% { opacity: 1; }
+  45% { opacity: 0.92; }
+  50% { opacity: 0.6; }
+  55% { opacity: 0.95; }
+}
+.flicker { animation: flicker 5s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .variant-prismatic, .flicker { animation: none; }
+}

@@ -54,7 +54,9 @@ export type SoundType =
   | 'gameover'
   | 'conversation_start'
   | 'message'
-  | 'conversation_end';
+  | 'conversation_end'
+  | 'rare'
+  | 'pause';
 
 export interface ConversationMessage {
   role: 'user' | 'alien';

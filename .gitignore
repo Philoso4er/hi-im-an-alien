@@ -26,3 +26,5 @@ dist-ssr
 # Keep 3D assets tracked
 !public/models/
 !public/models/**
+.vercel
+.env*

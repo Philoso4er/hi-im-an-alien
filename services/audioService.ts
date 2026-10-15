@@ -102,6 +102,21 @@ class AudioService {
         this.playNote(800, 0.3, 0.3);
         break;
 
+      case 'rare':
+        // Shimmering arpeggio for a rare sighting.
+        [660, 880, 990, 1320].forEach((f, i) => this.playNote(f, i * 0.09, 0.35));
+        break;
+
+      case 'pause':
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(320, now);
+        osc.frequency.exponentialRampToValueAtTime(180, now + 0.18);
+        gain.gain.setValueAtTime(0.12, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+        osc.start(now);
+        osc.stop(now + 0.2);
+        break;
+
       case 'conversation_end':
         this.playNote(800, 0, 0.15);
         this.playNote(600, 0.1, 0.15);

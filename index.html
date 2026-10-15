@@ -2,30 +2,31 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <meta name="theme-color" content="#000000" />
-    <meta name="description" content="Wave to mysterious alien beings and have cryptic conversations" />
-    <title>Hi, I'm An Alien 👽</title>
-    
-    <script src="https://cdn.tailwindcss.com"></script>
-    
-    <style>
-      body {
-        overscroll-behavior-y: contain;
-        touch-action: manipulation;
-        -webkit-tap-highlight-color: transparent;
-        font-family: system-ui, -apple-system, sans-serif;
-      }
-      
-      * {
-        -webkit-font-smoothing: antialiased;
-        -moz-osx-font-smoothing: grayscale;
-      }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>Hi I'm an Alien</title>
+    <meta name="description" content="Something is peeking into your camera. Say hi before it vanishes, then talk with it for ninety strange seconds." />
+    <meta name="theme-color" content="#05060f" />
+    <meta name="color-scheme" content="dark" />
+
+    <!-- iOS home-screen app -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Hi Alien" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+
+    <!-- Link previews -->
+    <meta property="og:title" content="Hi I'm an Alien" />
+    <meta property="og:description" content="Something is peeking into your camera. Say hi before it vanishes." />
+    <meta property="og:image" content="/icons/icon-512.png" />
+    <meta property="og:type" content="website" />
   </head>
-  
-  <body class="bg-black text-white overflow-hidden w-full h-full m-0 p-0">
-    <div id="root" class="w-full h-full"></div>
+
+  <body class="bg-black text-white overflow-hidden">
+    <div id="root"></div>
+    <noscript>Hi I'm an Alien needs JavaScript to appear.</noscript>
     <script type="module" src="/index.tsx"></script>
   </body>
 </html>

@@ -2,6 +2,39 @@
 
 A unique AR-style mobile game where mysterious aliens appear in your world through your phone's camera. Spot them, say hi before they vanish, and have deep philosophical conversations powered by AI!
 
+## 📲 Play / install
+
+**Live:** https://hi-im-an-alien.vercel.app (free Vercel subdomain)
+
+It's an installable PWA: full screen, its own icon, and it opens offline (the app shell and alien GIFs are cached by a service worker).
+
+- **Android (Chrome):** open the link, tap **Install** on the title screen (or Chrome menu ⋮ → *Install app* / *Add to Home screen*).
+- **iPhone / iPad (Safari):** open the link, tap **Install** on the title screen for the steps: **Share** → **Add to Home Screen** → **Add**. (In Chrome on iOS, Share is in the address bar.)
+- **Desktop Chrome/Edge:** install icon in the address bar.
+
+## 🕹️ Game shell
+
+- **Title screen** with streak / contacts / forms-seen chips, Install, Sightings, Settings.
+- **First-run onboarding:** how to play in 3 steps, then why we ask for the camera ("Use my camera" or "Play without camera"). Replay it from Settings.
+- **Settings:** sound, voice (speech out + mic), vibration, camera backdrop on/off, reset all data.
+- **Pause / resume:** pause button in-game and in the chat header; also pauses automatically when you leave the app. The 5-second say-hi window and the 90-second chat timer freeze while paused.
+- **No camera / camera blocked:** the alien visits a starfield "room" with a floor and a doorway edge to peek around, and a small notice explains how to re-enable the camera.
+
+## 🛸 Sightings, streaks and rare forms
+
+All stored in `localStorage` on the device, no backend.
+
+- **Sightings codex** (`components/SightingsCodex.tsx`): *Forms* (7 variants, locked until seen), *Log* (every conversation with its variant, date, length and a memorable alien line), *Stats* (sightings, hit rate, fastest hi, time talking, streaks).
+- **Daily streak:** say hi at least once a day.
+- **Rare variants** (`services/variants.ts`): same GIF alien, different tint/glow: Verdant Drifter, Ember Walker, Abyssal Echo, Prismatic One (mythic), plus time-of-day forms: **Dawnwatcher** (5–8 a.m. only) and **Lunar Grey** (midnight–4 a.m. only). Rare ones get their own chime and vibration. In WebXR the tint is applied to the billboard material.
+- **Memory:** the alien greets returning players with hazy references to topics from recent chats.
+
+## 🧪 Dev / test switches
+
+- `?debug=1` shows the old state panel with *Force Spawn* / *Re-place*.
+- `?nocamera=1` forces the no-camera star-room.
+- `?variant=lunar` (or `verdant`, `ember`, `dawn`, `abyssal`, `prismatic`) forces a variant.
+
 ## ✨ Key Features
 
 - **🎯 Discovery Gameplay**: Aliens randomly appear at screen edges - you have 5 seconds to respond!
@@ -48,13 +81,14 @@ Example conversations:
 
 ## 🛠️ Tech Stack
 
-- **React 19** + **TypeScript** - Modern UI framework
+- **React 18** + **TypeScript** - UI
 - **Framer Motion** - Smooth animations and transitions
 - **Google Gemini AI** - Powers alien conversation intelligence
 - **Web Speech API** - Voice recognition & synthesis
 - **MediaDevices API** - Camera access for AR background
 - **Vite** - Lightning-fast build tool
-- **Tailwind CSS** - Utility-first styling
+- **Tailwind CSS 3** - compiled at build time (no CDN, so it works offline)
+- **vite-plugin-pwa** - web manifest + Workbox service worker
 
 ## 📁 Project Structure
 
@@ -179,10 +213,12 @@ npm run build
 This creates a `dist/` folder with optimized files.
 
 ### Deploy to Vercel (Recommended)
-1. Push code to GitHub
-2. Import project in Vercel
-3. Add environment variable: `VITE_GEMINI_API_KEY`
-4. Deploy!
+```bash
+vercel deploy          # preview
+vercel deploy --prod   # production -> hi-im-an-alien.vercel.app
+```
+
+**AI is optional.** With no key the alien uses the scripted free fallback (default). To use Gemini, set `GEMINI_API_KEY` (and optionally `GEMINI_MODEL`, default `gemini-2.0-flash`) in the Vercel project's environment variables. `api/alien.ts` is a serverless proxy, so the key stays server-side and never reaches the client bundle. `VITE_GEMINI_API_KEY` still works for local experiments, but it is embedded in the bundle, so don't use it for public deploys. Never commit keys.
 
 ### Deploy to Netlify
 1. Drag `dist/` folder to Netlify
@@ -196,7 +232,7 @@ npm run build
 # Copy dist/ contents to your gh-pages branch
 ```
 
-**Important**: Set `VITE_GEMINI_API_KEY` in your hosting platform's environment variables!
+The game works fully without any API key.
 
 ## 🎯 Future Enhancement Ideas
 

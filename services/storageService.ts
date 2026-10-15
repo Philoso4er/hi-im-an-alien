@@ -6,13 +6,17 @@ const STORAGE_KEYS = {
   SETTINGS: 'alien_settings',
 };
 
-interface StoredEncounter {
+export interface StoredEncounter {
   id: string;
   startTime: number;
   endTime: number;
   messages: ConversationMessage[];
   location?: { lat: number; lng: number };
   timeOfDay: 'morning' | 'afternoon' | 'evening' | 'night';
+  /** Which sighting variant appeared (see services/variants.ts). Older saves have none = 'observer'. */
+  variantId?: string;
+  /** One line from the alien worth remembering, shown in the codex. */
+  memorableLine?: string;
 }
 
 interface GameStats {
@@ -91,11 +95,13 @@ class StorageService {
       if (msg.role === 'user') {
         // Look for "I am/I'm", "my", etc.
         const content = msg.content.toLowerCase();
-        if (content.includes('coffee')) mentions.push('coffee');
-        if (content.includes('work')) mentions.push('work');
-        if (content.includes('phone')) mentions.push('phone');
-        if (content.includes('sleep')) mentions.push('sleep');
-        // Add more patterns as needed
+        const themes = [
+          'coffee', 'work', 'phone', 'sleep', 'dream', 'love', 'music', 'stars', 'death', 'time',
+          'family', 'friend', 'money', 'school', 'rain', 'food', 'god', 'fear', 'home', 'ocean'
+        ];
+        themes.forEach(t => {
+          if (content.includes(t)) mentions.push(t);
+        });
       }
     });
     
@@ -143,6 +149,17 @@ class StorageService {
   clearAll(): void {
     localStorage.removeItem(STORAGE_KEYS.ENCOUNTERS);
     localStorage.removeItem(STORAGE_KEYS.STATS);
+  }
+
+  /** Topics + things the human mentioned in the last few encounters (for the alien's hazy memory). */
+  getMemoryTopics(limit: number = 3): string[] {
+    const mems = this.getRecentMemories(limit);
+    const out = new Set<string>();
+    mems.reverse().forEach(m => {
+      m.userMentioned.forEach(t => out.add(t));
+      m.topics.forEach(t => out.add(t));
+    });
+    return Array.from(out).slice(0, 6);
   }
 
   // Get time of day

@@ -20,6 +20,9 @@ interface AlienProps {
   xrBubbleAnchor?: { x: number; y: number } | null;
   onWalkInDone?: () => void;
   onWalkOutDone?: () => void;
+  /** Rare-variant look (CSS filter / class) applied to the alien only, not its shadow. */
+  variantFilter?: string;
+  variantClass?: string;
 }
 
 const WALK_IN = { speed: 1.7, maxDelay: 120 };
@@ -75,7 +78,11 @@ function useAlienPlayback(props: AlienProps) {
 }
 
 /** Mounts the player's canvas into this element. */
-const CanvasHost: React.FC<{ player: GifPlayer; style?: React.CSSProperties }> = ({ player, style }) => {
+const CanvasHost: React.FC<{ player: GifPlayer; style?: React.CSSProperties; className?: string }> = ({
+  player,
+  style,
+  className
+}) => {
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const host = ref.current;
@@ -89,7 +96,7 @@ const CanvasHost: React.FC<{ player: GifPlayer; style?: React.CSSProperties }> =
       if (c.parentElement === host) host.removeChild(c);
     };
   }, [player]);
-  return <div ref={ref} style={{ position: 'absolute', inset: 0, ...style }} />;
+  return <div ref={ref} className={className} style={{ position: 'absolute', inset: 0, ...style }} />;
 };
 
 /**
@@ -156,7 +163,9 @@ const SpeechBubble: React.FC<{ message: string; style: React.CSSProperties }> = 
 );
 
 const Alien: React.FC<AlienProps> = props => {
-  const { player, isVisible, status, scene, layout, renderTarget, message, xrBubbleAnchor } = props;
+  const { player, isVisible, status, scene, layout, renderTarget, message, xrBubbleAnchor, variantFilter, variantClass } =
+    props;
+  const look = { style: variantFilter ? { filter: variantFilter } : undefined, className: variantClass };
   useAlienPlayback(props);
 
   const peek = layout.peek;
@@ -201,7 +210,7 @@ const Alien: React.FC<AlienProps> = props => {
               transition={{ type: 'spring', damping: 24, stiffness: 140 }}
             >
               <ContactShadow player={player} floorFrac={ALIEN_GIFS.peek.floorFrac} minWidthPct={52} />
-              <CanvasHost player={player} />
+              <CanvasHost player={player} {...look} />
             </motion.div>
           )}
 
@@ -223,7 +232,7 @@ const Alien: React.FC<AlienProps> = props => {
               exit={{ opacity: 0, transition: { duration: 0.2 } }}
             >
               <ContactShadow player={player} floorFrac={ALIEN_GIFS.walk.floorFrac} minWidthPct={26} />
-              <CanvasHost player={player} />
+              <CanvasHost player={player} {...look} />
             </motion.div>
           )}
         </AnimatePresence>
