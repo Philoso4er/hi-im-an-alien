@@ -32,7 +32,7 @@ import { storageService } from './services/storageService';
 import { progressService, pickMemorableLine, AppSettings, Progress } from './services/progressService';
 import { haptics } from './services/haptics';
 import { AlienVariant, VARIANTS, rollVariant } from './services/variants';
-import { getAlienResponse, getAlienGreeting, getAlienFarewell, getAIMode } from './services/geminiService';
+import { getAlienResponse, getAlienGreeting, getAlienFarewell, getAIMode, startAIEncounter } from './services/geminiService';
 
 // three.js is only downloaded on devices that actually support WebXR AR.
 const XRAlienStage = lazy(() => import('./components/XRAlienStage'));
@@ -403,6 +403,7 @@ export default function App() {
       setEncounterStartTime(Date.now());
 
       endingRef.current = false;
+      startAIEncounter();
       setAlienMessage(null);
       setScreen(GameScreen.CONVERSATION);
       // Walk in, stop on the presenting gesture; the chat appears where it points.

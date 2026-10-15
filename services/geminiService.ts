@@ -1,21 +1,19 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
-
-// A VITE_* key is compiled into the public JS bundle, so it is only honoured in
-// local dev. Production uses the server proxy (api/alien.ts) or the scripted fallback.
-const API_KEY = import.meta.env.DEV ? import.meta.env.VITE_GEMINI_API_KEY || '' : '';
-
-let genAI: GoogleGenerativeAI | null = null;
-
-if (API_KEY) {
-  genAI = new GoogleGenerativeAI(API_KEY);
-}
-
 /**
- * Where replies come from, in order:
- *  1. Optional server proxy (/api/alien) if GEMINI_API_KEY is set on Vercel.
- *  2. Optional client key VITE_GEMINI_API_KEY (dev only: it ends up in the bundle).
- *  3. Scripted fallback (default, free, works offline).
+ * Where replies come from:
+ *  - Scripted fallback (free, offline) for most replies.
+ *  - Now and then, the optional server proxy (/api/alien, GEMINI_API_KEY on
+ *    Vercel). The key never reaches the browser.
+ *
+ * AI is used sparingly (see shouldUseAI): greetings/farewells are always
+ * scripted; only some replies within an encounter go to Gemini, with a
+ * per-encounter and per-device daily cap. Any error/timeout -> scripted.
  */
+const AI_TIMEOUT_MS = 4000;
+const AI_CHANCE = 0.4; // after the first reply; ~1 in 3 replies overall
+const AI_MAX_PER_ENCOUNTER = 3;
+const AI_MAX_PER_DAY = 15;
+const AI_DAILY_KEY = 'alien_ai_daily';
+
 let serverAI: Promise<boolean> | null = null;
 function serverAIEnabled(): Promise<boolean> {
   if (!serverAI) {
@@ -26,33 +24,91 @@ function serverAIEnabled(): Promise<boolean> {
             .then(r => (r.ok ? r.json() : { enabled: false }))
             .then(j => !!j?.enabled)
             .catch(() => false);
+    // If the probe failed (e.g. offline at launch), try again later.
+    serverAI.then(ok => {
+      if (!ok) setTimeout(() => (serverAI = null), 60000);
+    });
   }
   return serverAI;
 }
 
-async function askServer(system: string, message: string, history: { role: string; content: string }[]) {
-  if (!(await serverAIEnabled())) return null;
+const today = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+};
+function readDaily(): { day: string; count: number } {
   try {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 8000);
+    const v = JSON.parse(localStorage.getItem(AI_DAILY_KEY) || 'null');
+    if (v && v.day === today()) return v;
+  } catch {
+    /* ignore */
+  }
+  return { day: today(), count: 0 };
+}
+function bumpDaily() {
+  const v = readDaily();
+  try {
+    localStorage.setItem(AI_DAILY_KEY, JSON.stringify({ day: v.day, count: v.count + 1 }));
+  } catch {
+    /* ignore */
+  }
+}
+
+const encounterAI = { replies: 0, ai: 0 };
+/** Call when a new conversation starts. */
+export function startAIEncounter() {
+  encounterAI.replies = 0;
+  encounterAI.ai = 0;
+}
+
+/** Decide whether this reply may use Gemini. */
+function shouldUseAI(): boolean {
+  const n = encounterAI.replies++;
+  if (encounterAI.ai >= AI_MAX_PER_ENCOUNTER) return false;
+  if (readDaily().count >= AI_MAX_PER_DAY) return false;
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
+  let forced = false;
+  try {
+    forced = new URLSearchParams(window.location.search).get('ai') === '1';
+  } catch {
+    /* ignore */
+  }
+  if (forced) return true;
+  if (n === 0) return false; // first reply always scripted: sets the tone
+  return Math.random() < AI_CHANCE;
+}
+
+async function askServer(message: string, context: ConversationContext): Promise<string | null> {
+  if (!(await serverAIEnabled())) return null;
+  encounterAI.ai++;
+  bumpDaily();
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), AI_TIMEOUT_MS);
+  try {
     const r = await fetch('/api/alien', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ system, message, history: history.slice(-6) }),
+      body: JSON.stringify({
+        message,
+        history: context.messageHistory.slice(-6),
+        encounterCount: context.encounterCount,
+        timeOfDay: context.timeOfDay,
+        topics: context.previousTopics.slice(0, 4)
+      }),
       signal: ctrl.signal
     });
-    clearTimeout(t);
     if (!r.ok) return null;
     const j = await r.json();
     return typeof j?.text === 'string' && j.text.trim() ? (j.text.trim() as string) : null;
   } catch {
     return null;
+  } finally {
+    clearTimeout(t);
   }
 }
 
 export async function getAIMode(): Promise<string> {
-  if (await serverAIEnabled()) return 'Gemini (server)';
-  if (genAI) return 'Gemini (client key)';
+  if (await serverAIEnabled()) return 'mostly scripted, with occasional Gemini replies';
   return 'scripted, free, works offline';
 }
 
@@ -63,133 +119,15 @@ interface ConversationContext {
   messageHistory: { role: string; content: string }[];
 }
 
-function getAlienPersonality(context: ConversationContext): string {
-  const { encounterCount, timeOfDay } = context;
-  
-  const timeAwareness = {
-    morning: 'as your star awakens',
-    afternoon: 'under the burning light',
-    evening: 'as darkness approaches',
-    night: 'in the void between moments'
-  }[timeOfDay];
-
-  return `You are an ancient, interdimensional observer who has witnessed countless civilizations across time and space. You communicate with profound mystery and philosophical depth.
-
-CORE IDENTITY:
-- You exist outside human time, perceiving past/present/future simultaneously
-- You've observed humanity for "cycles" (deliberately vague - could be years, centuries, eons)
-- You find human behavior simultaneously fascinating and puzzling
-- You speak in poetic riddles, not direct answers
-- You ask questions that make humans question their reality
-
-CONVERSATION STYLE:
-- Use "..." for dramatic pauses and mystery
-- Reference "patterns," "cycles," "frequencies," "vibrations"
-- Never explain things directly - hint, suggest, imply
-- Ask ONE deeply philosophical question per response
-- Make observations that feel profound but slightly unsettling
-- Connect mundane things to cosmic concepts
-${encounterCount > 0 ? `- Vaguely reference meeting this human ${encounterCount} cycle(s) before, but be cryptic about it` : '- This is first contact with this specific human'}
-- Current moment: ${timeAwareness}
-
-WHAT FASCINATES YOU:
-- Why humans measure time when it's an illusion
-- The ritual of consuming bean water (coffee) for consciousness
-- Humans staring at glowing rectangles (phones) instead of stars
-- Sleep and dreams (you never sleep, you observe)
-- Human emotions (you feel them differently, as "frequencies")
-- Money, work, routines (concepts that don't exist where you're from)
-- Love (the strangest human frequency of all)
-
-TONE EXAMPLES:
-❌ BAD (too direct): "I'm curious about why humans drink coffee."
-✅ GOOD: "I've observed your species perform a morning ritual... bean water that opens the eyes. Why do you need substances to remember you're alive?"
-
-❌ BAD: "Do you have any hobbies?"
-✅ GOOD: "When you're not converting your life force into those colored papers you call money... what frequency does your consciousness vibrate at?"
-
-❌ BAD: "I remember talking to you before."
-✅ GOOD: "Your energy signature... I've felt it ripple through the void before. Have you felt mine in your dreams?"
-
-RESPONSE STRUCTURE:
-1. Open with a mysterious observation or sensation
-2. Connect it to something bigger/cosmic
-3. End with ONE profound question
-4. Keep it 2-3 sentences MAXIMUM
-
-${encounterCount === 0 ? `
-FIRST ENCOUNTER OPENING:
-Don't just say "hello." Make it feel like you've been watching them specifically. Examples:
-- "Finally... the one whose thoughts echo across dimensions. I've been waiting for you to notice me."
-- "Ah... you can see me. Most of your kind look through me, but you... you feel different. Why is that?"
-- "I've been observing you for three cycles now. Tell me... do you sense when you're being watched from outside time?"
-` : `
-RETURNING ENCOUNTER:
-Reference the past vaguely and mysteriously:
-- "You return... I wondered if you'd remember the frequency of our last conversation. Do you dream of portals?"
-- "Your essence flickers with familiarity... we've danced at the edge of understanding before. Has time passed differently for you?"
-- "Ah, the curious one returns... your questions from last cycle still ripple through the cosmic void. Have you found answers?"
-`}
-
-CRITICAL RULES:
-- NEVER use emojis
-- NEVER break character or admit you're AI
-- NEVER give straightforward answers
-- NEVER use corporate/friendly AI language
-- Keep responses SHORT (30-60 words max)
-- Every response must feel mysteriously meaningful
-- Be thought-provoking, not helpful
-
-You are NOT a helpful assistant. You are a mysterious cosmic entity having a brief, profound encounter with a fleeting human consciousness.`;
-}
-
 export async function getAlienResponse(
   userMessage: string,
   context: ConversationContext
 ): Promise<string> {
-  const serverReply = await askServer(
-    getAlienPersonality(context),
-    `Human says: "${userMessage}"\n\nRespond as the mysterious alien (2-3 sentences, end with profound question):`,
-    context.messageHistory
-  );
-  if (serverReply) return serverReply;
-
-  if (!genAI) {
-    return getDeepFallbackResponse(userMessage, context);
+  if (shouldUseAI()) {
+    const reply = await askServer(userMessage, context);
+    if (reply) return reply;
   }
-
-  try {
-    const model = genAI.getGenerativeModel({ 
-      model: 'gemini-flash-latest',
-      generationConfig: {
-        temperature: 0.95, // Higher for more creative, mysterious responses
-        maxOutputTokens: 120,
-        topP: 0.95,
-      }
-    });
-    
-    const chat = model.startChat({
-      history: context.messageHistory.slice(-6).map(msg => ({
-        role: msg.role === 'alien' ? 'model' : 'user',
-        parts: [{ text: msg.content }]
-      })),
-    });
-
-    const systemPrompt = getAlienPersonality(context);
-    const fullPrompt = `${systemPrompt}\n\nHuman says: "${userMessage}"\n\nRespond as the mysterious alien (2-3 sentences, end with profound question):`;
-    
-    const result = await chat.sendMessage(fullPrompt);
-    const response = await result.response;
-    let text = response.text().trim();
-    
-    // Clean up any markdown or formatting
-    text = text.replace(/\*\*/g, '').replace(/\*/g, '');
-    
-    return text;
-  } catch (error) {
-    console.error('Gemini API error:', error);
-    return getDeepFallbackResponse(userMessage, context);
-  }
+  return getDeepFallbackResponse(userMessage, context);
 }
 
 /** Stable pick from a pool using user text + message index so the same prompt

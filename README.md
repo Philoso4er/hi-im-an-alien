@@ -218,7 +218,15 @@ vercel deploy          # preview
 vercel deploy --prod   # production -> hi-im-an-alien.vercel.app
 ```
 
-**AI is optional.** With no key the alien uses the scripted free fallback (default). To use Gemini, set `GEMINI_API_KEY` (and optionally `GEMINI_MODEL`, default `gemini-flash-latest`) in the Vercel project's environment variables. `api/alien.ts` is a serverless proxy, so the key stays server-side and never reaches the client bundle. `VITE_GEMINI_API_KEY` is only read in `npm run dev` (Vite would otherwise compile it into the public bundle); production builds ignore it. Never commit keys.
+**AI is optional and sparse.** Without a key every reply is scripted (free, offline). With `GEMINI_API_KEY` set in the Vercel project (server-only; optional `GEMINI_MODEL`, default `gemini-3.5-flash-lite`), `api/alien.ts` answers *some* replies:
+
+- greetings and farewells are always scripted; the first reply of each encounter is scripted
+- after that each reply has a ~40% chance of going to Gemini (≈1 in 3 overall), max 3 AI replies per encounter and 15 per device per day (`alien_ai_daily` in localStorage)
+- 4 s client timeout; any error, timeout, rate limit or offline → scripted reply
+- server guards: persona prompt built server-side (clients can't send a system prompt), message ≤280 chars, ≤6 history turns, ≤110 output tokens, best-effort per-IP limit of 6/min and 20/hour
+- `?ai=1` forces AI for testing (still subject to the daily cap and server limits)
+
+Never commit keys, and never use a `VITE_*` variable for a key (Vite compiles those into the public bundle).
 
 ### Deploy to Netlify
 1. Drag `dist/` folder to Netlify
