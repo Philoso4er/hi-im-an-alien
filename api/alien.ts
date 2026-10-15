@@ -17,12 +17,20 @@ const MAX_HISTORY = 6;
 const MAX_OUTPUT_TOKENS = 110;
 const UPSTREAM_TIMEOUT_MS = 3500;
 
-// Per-IP: 6 requests / minute and 20 / hour. Plus a per-instance ceiling.
+// Per network (IPv4 /24, IPv6 /64): 6 requests / minute and 20 / hour. Plus a per-instance ceiling.
 const PER_MIN = 6;
 const PER_HOUR = 20;
 const INSTANCE_PER_HOUR = 300;
 const hits = new Map<string, number[]>();
+const INSTANCE = Math.random().toString(36).slice(2, 8);
 let instanceHits: number[] = [];
+
+/** Group addresses by IPv4 /24 or IPv6 /64, so rotating addresses in one network share a bucket. */
+function ipBucket(ip: string): string {
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(ip)) return ip.split('.').slice(0, 3).join('.');
+  if (ip.includes(':')) return ip.split(':').slice(0, 4).join(':');
+  return ip;
+}
 
 function rateLimited(ip: string): boolean {
   const now = Date.now();
@@ -45,7 +53,7 @@ function rateLimited(ip: string): boolean {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
-    headers: { 'content-type': 'application/json', 'cache-control': 'no-store' }
+    headers: { 'content-type': 'application/json', 'cache-control': 'no-store', 'x-alien-instance': INSTANCE }
   });
 
 const TIME_PHRASE: Record<string, string> = {
@@ -88,7 +96,7 @@ export async function POST(request: Request) {
     (request.headers.get('x-forwarded-for') || '').split(',')[0].trim() ||
     request.headers.get('x-real-ip') ||
     'unknown';
-  if (rateLimited(ip)) return json({ error: 'slow down' }, 429);
+  if (rateLimited(ipBucket(ip))) return json({ error: 'slow down' }, 429);
 
   const len = Number(request.headers.get('content-length') || 0);
   if (len > 8000) return json({ error: 'too large' }, 413);

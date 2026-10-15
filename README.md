@@ -223,7 +223,7 @@ vercel deploy --prod   # production -> hi-im-an-alien.vercel.app
 - greetings and farewells are always scripted; the first reply of each encounter is scripted
 - after that each reply has a ~40% chance of going to Gemini (≈1 in 3 overall), max 3 AI replies per encounter and 15 per device per day (`alien_ai_daily` in localStorage)
 - 4 s client timeout; any error, timeout, rate limit or offline → scripted reply
-- server guards: persona prompt built server-side (clients can't send a system prompt), message ≤280 chars, ≤6 history turns, ≤110 output tokens, best-effort per-IP limit of 6/min and 20/hour
+- server guards: persona prompt built server-side (clients can't send a system prompt), message ≤280 chars, ≤6 history turns, ≤110 output tokens, best-effort per-network (IPv4 /24, IPv6 /64) limit of 6/min and 20/hour per warm instance
 - `?ai=1` forces AI for testing (still subject to the daily cap and server limits)
 
 Never commit keys, and never use a `VITE_*` variable for a key (Vite compiles those into the public bundle).
